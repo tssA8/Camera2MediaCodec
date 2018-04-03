@@ -2,20 +2,28 @@ apply plugin: 'com.android.application'
 
 
 android {
-    compileSdkVersion 26
-    buildToolsVersion "26.0.1"
+
+    compileSdkVersion 27
+    buildToolsVersion "26.0.2"
     defaultConfig {
         applicationId "com.example.kuohsuan.androidcamera2mediacodec"
         minSdkVersion 21
-        targetSdkVersion 26
+        targetSdkVersion 23
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters "armeabi" // 保留这三种架构的CPU
+        }
+
     }
     buildTypes {
         release {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            ndk {
+                abiFilters "armeabi" // 保留这三种架构的CPU
+            }
+
         }
     }
 }
@@ -25,8 +33,21 @@ dependencies {
     androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
         exclude group: 'com.android.support', module: 'support-annotations'
     })
-    compile 'com.android.support:appcompat-v7:26.+'
+
+    compile 'com.android.support:appcompat-v7:27.+'
     compile 'com.android.support.constraint:constraint-layout:1.0.2'
-    compile 'com.android.support:design:26.+'
+    compile 'com.android.support:design:27.+'
+    compile 'com.google.code.gson:gson:2.8.2'
+    compile 'com.github.ChillingVan:android-openGL-canvas:v1.2.2.3'
+    compile 'com.tbruyelle.rxpermissions:rxpermissions:0.8.0@aar'
+    compile 'com.jakewharton.rxbinding:rxbinding:0.4.0'
+    //zbar
+    compile 'com.yanzhenjie.zbar:zbar:1.0.0'
+    compile 'com.yanzhenjie.zbar:camera:1.0.0'
+    compile 'com.yanzhenjie:permission:1.0.7'
+
     testCompile 'junit:junit:4.12'
+    compile 'com.google.android.gms:play-services-vision:10.2.0'
+
+
 }

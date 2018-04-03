@@ -3,11 +3,6 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent" >
 
-    <TextureView
-        android:id="@+id/textureview"
-        android:layout_width="960px"
-        android:layout_height="720px"
-        android:layout_centerInParent="true" />
     <ImageView
         android:id="@+id/show_photo"
         android:layout_width="180dp"
@@ -15,6 +10,14 @@
         android:visibility="gone"
         android:layout_centerInParent="true"
         android:scaleType="centerCrop" />
+
+    <com.example.kuohsuan.camera2mediacodec.View.CameraPreviewTextureView
+        android:id="@+id/txv_camera_preview_with_filter"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center"/>
+
+
 
     <Button
         android:id="@+id/takePhoto"
