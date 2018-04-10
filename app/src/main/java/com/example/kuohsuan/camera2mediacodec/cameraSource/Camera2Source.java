@@ -782,8 +782,15 @@ public class Camera2Source implements ICameraAction {
             mCameraId = manager.getCameraIdList()[mFacing];
             CameraCharacteristics characteristics = manager.getCameraCharacteristics(mCameraId);
             //CHECK CAMERA HARDWARE LEVEL. IF CAMERA2 IS NOT NATIVELY SUPPORTED, GO BACK TO CAMERA1
-            Integer deviceLevel = characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
-            return deviceLevel != null && (deviceLevel != CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY);
+
+            boolean isSupportCamera2 =false;
+            isSupportCamera2 = isHardwareLevelSupported(characteristics,CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LIMITED);
+
+
+//            Integer deviceLevel = characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
+            Log.d(TAG,"AAA_ 是否支援 INFO_SUPPORTED_HARDWARE_LEVEL : "+isSupportCamera2);
+
+            return isSupportCamera2;
         }
         catch (CameraAccessException ex) {return false;}
         catch (NullPointerException e) {return false;}
@@ -791,6 +798,28 @@ public class Camera2Source implements ICameraAction {
             return false;
         }
     }
+
+
+
+    /**
+     * https://developer.android.com/reference/android/hardware/camera2/CameraCharacteristics.html
+     *
+     *  LEGACY devices operate in a backwards-compatibility mode for older Android devices, and have very limited capabilities.
+     LIMITED devices represent the baseline feature set, and may also include additional capabilities that are subsets of FULL.
+     FULL devices additionally support per-frame manual control of sensor, flash, lens and post-processing settings, and image capture at a high rate.
+     LEVEL_3 devices additionally support YUV reprocessing and RAW image capture, along with additional output stream configurations.
+
+     * */
+    // Returns true if the device supports the required hardware level, or better.
+    private  boolean isHardwareLevelSupported(CameraCharacteristics c, int requiredLevel) {
+        int deviceLevel = c.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
+        if (deviceLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY) {
+            return requiredLevel == deviceLevel;
+        }
+        // deviceLevel is not LEGACY, can use numerical sort
+        return requiredLevel <= deviceLevel;
+    }
+
 
     /**
      * Opens the camera and starts sending preview frames to the underlying detector.  The supplied

@@ -60,7 +60,6 @@ import com.example.kuohsuan.camera2mediacodec.stream.encoder.MyVideoEncoder;
 import com.example.kuohsuan.camera2mediacodec.util.FileUtils;
 import com.example.kuohsuan.camera2mediacodec.util.ImageUtil;
 import com.example.kuohsuan.camera2mediacodec.util.ScreenUtil;
-import com.google.android.gms.vision.face.FaceDetector;
 import com.yanzhenjie.zbar.Config;
 import com.yanzhenjie.zbar.ImageScanner;
 import com.yanzhenjie.zbar.Symbol;
@@ -76,7 +75,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 
@@ -136,7 +134,6 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
     private ImageScanner zbarImageScanner;
     private Handler mZabrHandler;
     private ScanCallback mZbarCallback;
-    private ZbarImage zbarImage;
 
     /**
      * The {@link android.util.Size} of camera preview.
@@ -177,29 +174,14 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
     }
 
     private void initCamera(){
-        int cameraFacing=0;
-
+        //////////Abstract Factory //只需要知道要請求什麼物件,就可以直接使用;無須擔心實作方法.
         if(usingFrontCamera){
-            cameraFacing =Camera2Source.CAMERA_FACING_FRONT;
-        }else{
-            cameraFacing =Camera2Source.CAMERA_FACING_BACK;
-        }
+            FrontCamera frontCamera = new FrontCamera();
+            frontCamera.buildCamera2();// frontCamera.buildCamera1();
 
-        if (useCamera2) {
-            //front camera2
-            mCamera2Source =  new Camera2Source.Builder(this)
-                    .setFocusMode(Camera2Source.CAMERA_AF_AUTO)
-                    .setFlashMode(Camera2Source.CAMERA_FLASH_AUTO)
-                    .setFacing(cameraFacing)
-                    .setYuvCallBack().build();
-                    mCameraDelegate = mCamera2Source;
         }else{
-//            //front camera1
-//            mCameraSource = new CameraSource.Builder(this)
-//                    .setFacing(cameraFacing)
-//                    .setRequestedFps(30.0f)
-//                    .setYuvCallBack().build();
-//            mCameraDelegate = mCameraSource;
+            BackCamera backCamera = new BackCamera();
+            backCamera.buildCamera2();// backCamera.buildCamera1();
         }
 
     }
@@ -365,6 +347,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         barcode.destroy();
 
     }
+
     private void setZbarResult(final String result){
 //        Log.d(TAG,"onScanResult: " + result);
         new Thread(new Runnable(){
@@ -478,9 +461,6 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
             myAudioEncoder.stopCodec();
 
         stopCameraSource();
-        if (previewFaceDetector != null) {
-            previewFaceDetector.release();
-        }
     }
 
 
@@ -702,7 +682,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 
 
 
-    private FaceDetector previewFaceDetector = null;
+
     private int barId =0 ;
     private void startCameraSource() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -829,10 +809,8 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
      *                          orientation.
      * @return the total rotation from the sensor orientation to the current device orientation.
      */
-    private int cameraSensorOrientation;
     private int sensorToDeviceRotation(CameraCharacteristics c, int deviceOrientation) {
         int sensorOrientation = c.get(CameraCharacteristics.SENSOR_ORIENTATION);
-        cameraSensorOrientation = sensorOrientation;
         // Get device orientation in degrees
         deviceOrientation = ORIENTATIONS.get(deviceOrientation);
 
@@ -943,34 +921,88 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         this.mZbarCallback = callback;
     }
 
-
-
-    static class ZbarImage {
-        // 管理現有的BigChar的物件個體
-        private Hashtable pool = new Hashtable();
-        // Singleton Pattern
-        private  static ZbarImage singletonImage = new ZbarImage();
-        // 建構子
-        private ZbarImage(){
-
-        }
-        // 取得唯一的物件個體
-        private ZbarImage getInstance() {
-            return singletonImage;
-        }
-        // 產生（共用）BigChar的物件個體
-        synchronized com.yanzhenjie.zbar.Image getBarCodeData(byte[] data,int imageWidth, int imageHeight){
-            com.yanzhenjie.zbar.Image im = ( com.yanzhenjie.zbar.Image)pool.get(data);
-            if(im==null){
-                im = new com.yanzhenjie.zbar.Image(imageWidth, imageHeight, "Y800");
-                im.setData(data);
-                pool.put(data,im);
-            }
-            return im;
-
-        }
-
+    //abstract factory
+    abstract  class CameraFactory{
+//        abstract public Camera1Factory buildCamera1();
+        abstract public Camera2Factory buildCamera2();
     }
+
+//    class Camera1Factory{
+//        public Camera1Factory(){
+//        }
+//    }
+    class Camera2Factory{
+        public Camera2Factory(){
+        }
+    }
+
+    class FrontCamera extends CameraFactory{
+
+//        @Override
+//        public Camera1Factory buildCamera1() {
+//            Log.e(TAG,"AAA_use camera1");
+//            Camera1Factory  factory = new Camera1Factory();
+//            mCameraSource = new CameraSource.Builder(MainActivity.this)
+//                    .setFacing(CameraSource.CAMERA_FACING_FRONT)
+//                    .setRequestedFps(30.0f)
+//                    .setYuvCallBack().build();
+//
+//            mCameraDelegate = mCameraSource;
+//            return factory;
+//        }
+
+        @Override
+        public Camera2Factory buildCamera2() {
+            Camera2Factory  factory = new Camera2Factory();
+            mCamera2Source =  new Camera2Source.Builder(SurfaceTextureCamera2Activity.this)
+                    .setFocusMode(Camera2Source.CAMERA_AF_AUTO)
+                    .setFlashMode(Camera2Source.CAMERA_FLASH_AUTO)
+                    .setFacing(Camera2Source.CAMERA_FACING_FRONT)
+                    .setYuvCallBack().build();
+
+            if (mCamera2Source.isCamera2Native()) {
+                mCameraDelegate = mCamera2Source;
+
+            }
+            return factory;
+
+        }
+    }
+
+    class BackCamera extends CameraFactory{
+
+//        @Override
+//        public Camera1Factory buildCamera1() {
+////            Log.e(TAG,"AAA_use camera1");
+////            Camera1Factory  factory = new Camera1Factory();
+////            mCameraSource = new CameraSource.Builder(MainActivity.this)
+////                    .setFacing(CameraSource.CAMERA_FACING_BACK)
+////                    .setRequestedFps(30.0f)
+////                    .setYuvCallBack().build();
+////
+////            mCameraDelegate = mCameraSource;
+//
+//            return factory;
+//        }
+
+        @Override
+        public Camera2Factory buildCamera2() {
+            Camera2Factory  factory = new Camera2Factory();
+            mCamera2Source =  new Camera2Source.Builder(SurfaceTextureCamera2Activity.this)
+                    .setFocusMode(Camera2Source.CAMERA_AF_AUTO)
+                    .setFlashMode(Camera2Source.CAMERA_FLASH_AUTO)
+                    .setFacing(Camera2Source.CAMERA_FACING_BACK)
+                    .setYuvCallBack().build();
+
+            if (mCamera2Source.isCamera2Native()) {
+                mCameraDelegate = mCamera2Source;
+            }
+            return factory;
+
+        }
+    }
+
+
 
 }
 
