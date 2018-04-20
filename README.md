@@ -73,11 +73,16 @@ initViewEncoder(STREAMING_RESOLUTION);
   
   3. implements IYuvDataCallback in your class,then you can get the data from ImageReader callback
   
-  4.use zbar to scan
+  4. use zbar to scan
+     e.g
+      Image barcode = new com.yanzhenjie.zbar.Image(imageWidth, imageHeight, "Y800");
+      barcode.setData(data);
+      int result = zbarImageScanner.scanImage(barcode);
+      SymbolSet symSet = zbarImageScanner.getResults();
   
 `````
 
-preivew
+preview
 -----
 
 ￼￼￼![alt text](https://serving.photos.photobox.com/314167626a7d55376ab63d583d9df972d8aa18ff8601dd85abc2f4b2b5e02e352335433c.jpg)
