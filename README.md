@@ -25,7 +25,7 @@ first: easy to use camera
             backCamera.buildCamera2();// backCamera.buildCamera1();
         }
         
-second: startCamera when surfaceTexture is Available or set
+second: startCamera when surfaceTexture is available or onSet
   
    offScreenCanvasWithFilter.setOnSurfaceTextureSet(new GLSurfaceTextureProducerView.OnSurfaceTextureSet() {
                     @Override
