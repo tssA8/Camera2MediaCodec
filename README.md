@@ -10,10 +10,8 @@
 
 usage
 -------
-
-``````
-
-
+*camera2
+`````
 first: easy to use camera 
    
     if(usingFrontCamera){
@@ -49,6 +47,35 @@ second: startCamera when surfaceTexture is available or onSet
 
 ``````
 
+
+
+*zbar detect resolution set
+`````
+can set resoluition to zbar library
+
+if your device support 1920*1080 .  e.g STREAMING_RESOLUTION = 1920
+initViewEncoder(STREAMING_RESOLUTION);
+
+`````
+
+
+*zbar
+  *Add interface callback code
+  * [IYuvDataCallback.java](app/src/main/java/com/example/kuohsuan/camera2mediacodec/Interface/IYuvDataCallback.java)
+`````
+ 1.set IYuvDataCallback in your ImageReader callback
+  e.g
+   if(mIYuvDataCallback !=null){
+                mIYuvDataCallback.getYuv(convertYUV420888ToNV21Grey(mImage),mImage.getWidth(),mImage.getHeight());
+            }
+           
+  2. init zbar scanner
+  
+  3. implements IYuvDataCallback in your class,then you can get the data from ImageReader callback
+  
+  4.use zbar to scan
+  
+`````
 
 preivew
 -----
