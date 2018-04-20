@@ -47,6 +47,8 @@ public class StartCameraSourceBean {
         CameraPreviewTextureView textureView;
         SurfaceTexture previewSurfaceTexture;
         SurfaceTexture _offScreenSurfaceTexture;
+        int streamingResolutionW;
+        int streamingResolutionH;
         int displayOrientation;
 
         public CameraPreviewTextureView getTextureView() {
@@ -79,6 +81,22 @@ public class StartCameraSourceBean {
 
         public void setDisplayOrientation(int displayOrientation) {
             this.displayOrientation = displayOrientation;
+        }
+
+        public int getStreamingResolutionW() {
+            return streamingResolutionW;
+        }
+
+        public void setStreamingResolutionW(int streamingResolutionW) {
+            this.streamingResolutionW = streamingResolutionW;
+        }
+
+        public int getStreamingResolutionH() {
+            return streamingResolutionH;
+        }
+
+        public void setStreamingResolutionH(int streamingResolutionH) {
+            this.streamingResolutionH = streamingResolutionH;
         }
     }
 

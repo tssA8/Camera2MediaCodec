@@ -1,5 +1,6 @@
 
 package com.example.kuohsuan.camera2mediacodec.Activity;
+
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -52,6 +53,7 @@ import com.example.kuohsuan.camera2mediacodec.View.CameraPreviewTextureView;
 import com.example.kuohsuan.camera2mediacodec.View.EncoderCanvas;
 import com.example.kuohsuan.camera2mediacodec.View.IAutoFixView;
 import com.example.kuohsuan.camera2mediacodec.bean.StartCameraSourceBean;
+import com.example.kuohsuan.camera2mediacodec.bean.ZBarCodeBean;
 import com.example.kuohsuan.camera2mediacodec.cameraSource.Camera2Source;
 import com.example.kuohsuan.camera2mediacodec.stream.MuxerManagement;
 import com.example.kuohsuan.camera2mediacodec.stream.encoder.MyAudioEncoder;
@@ -60,6 +62,7 @@ import com.example.kuohsuan.camera2mediacodec.stream.encoder.MyVideoEncoder;
 import com.example.kuohsuan.camera2mediacodec.util.FileUtils;
 import com.example.kuohsuan.camera2mediacodec.util.ImageUtil;
 import com.example.kuohsuan.camera2mediacodec.util.ScreenUtil;
+import com.example.kuohsuan.camera2mediacodec.util.ZbarQueue;
 import com.yanzhenjie.zbar.Config;
 import com.yanzhenjie.zbar.ImageScanner;
 import com.yanzhenjie.zbar.Symbol;
@@ -72,6 +75,7 @@ import org.json.JSONObject;
 
 import java.io.BufferedOutputStream;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -135,6 +139,9 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
     private Handler mZabrHandler;
     private ScanCallback mZbarCallback;
 
+    //streaming resolution
+    private static  final int STREAMING_RESOLUTION = 1920;
+
     /**
      * The {@link android.util.Size} of camera preview.
      */
@@ -154,7 +161,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         Log.d(TAG, "AAA_onCreate");
         FileUtils.mkDirs(OUTPUT_DIR);//create folder
         FileUtils.delAllFile(OUTPUT_DIR);
-        initViewEncoder();
+        initViewEncoder(STREAMING_RESOLUTION);
         ///在這裡才可以正式開啟camera
         initCamera();
         findView();
@@ -185,7 +192,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         }
 
     }
-    private void initViewEncoder() {
+    private void initViewEncoder(int resolution) {
         long startRecordWhenNs = System.nanoTime();
         CameraManager cameraManager = (CameraManager) getSystemService(CAMERA_SERVICE);
 
@@ -200,7 +207,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
             Size[] surfaceTextureSize = map.getOutputSizes(SurfaceTexture.class);
             int findIndex = 0;
             for (Size size : surfaceTextureSize) {
-                if (size.getWidth() <= 1920) {
+                if (size.getWidth() <= resolution) {
                     break;
                 }
                 findIndex++;
@@ -338,14 +345,14 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 
 
     }
-
+    private com.yanzhenjie.zbar.Image barcode ;
     @Override
     public void getYuv(byte[] data,int imageWidth, int imageHeight) {
-        com.yanzhenjie.zbar.Image barcode = new com.yanzhenjie.zbar.Image(imageWidth, imageHeight, "Y800");
+        if(barcode==null ){
+            barcode = new com.yanzhenjie.zbar.Image(imageWidth, imageHeight, "Y800");
+        }
         barcode.setData(data);
-        startZbarScan(barcode, imageWidth,  imageHeight);
-        barcode.destroy();
-
+        startZbarScan(barcode,imageWidth,imageHeight);
     }
 
     private void setZbarResult(final String result){
@@ -353,42 +360,73 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         new Thread(new Runnable(){
             @Override
             public void run() {
+
                 // TODO Auto-generated method stub
                 try {
+                    ArrayList<String> thisTimeList = new ArrayList<>();
                     JSONArray jsonArray = new JSONArray(result);
+
+                    //last time zbar result
+                    ArrayList<String> lastResultBeanList = getLastTimeZbarResultList();
+                    ArrayList<ZBarCodeBean> cloneZBarcodeBeanArrayList = new ArrayList<>();
+
+                    //1 get result list
                     for(int i = 0 ; i< jsonArray.length() ; i++){
-                        barId = barId+1;
                         JSONObject scanResultJSONObject = jsonArray.getJSONObject(i);
                         String scanStr = scanResultJSONObject.getString(Constant.ZBAR_BARCODE_SCAN_RESULT);
-                        int bound1 = scanResultJSONObject.getInt(Constant.ZBAR_BARCODE_BOUND1);
-                        int bound2 = scanResultJSONObject.getInt(Constant.ZBAR_BARCODE_BOUND2);
-                        int bound3 = scanResultJSONObject.getInt(Constant.ZBAR_BARCODE_BOUND3);
-                        int bound4 = scanResultJSONObject.getInt(Constant.ZBAR_BARCODE_BOUND4);
-                        int zbarImageH = scanResultJSONObject.getInt(Constant.ZBAR_BARCODE_IMAGE_HIGHT);
-                        int zbarImageW = scanResultJSONObject.getInt(Constant.ZBAR_BARCODE_IMAGE_WEIGHT);
-                        Log.d("onScanResult","result : "+scanStr);
-
-                        Bitmap textZBitmap = ImageUtil.drawText(scanStr , 300 , 50 , Color.TRANSPARENT);
-                        MyGlRenderFilter.ZBarcodeBean barcodeBean = new MyGlRenderFilter.ZBarcodeBean(scanStr,textZBitmap);
-                        MyGlRenderFilter.getZBarcodeBeanMap().put(barId , barcodeBean);
-                        barcodeBean.setZbarcodeString(scanStr);
-
-                        Log.d(TAG,"ZZZ_ZBAR bound1 : "+bound1+" bound2 : "+bound2
-                                +" bound3 : "+bound3+" bound4 :"+bound4+" scanStr : "+scanStr);
-
-                        barcodeBean.setBound1(bound1);
-                        barcodeBean.setBound2(bound2);
-                        barcodeBean.setBound3(bound3);
-                        barcodeBean.setBound4(bound4);
-                        barcodeBean.setImageReaderCreateHeight(zbarImageH);
-                        barcodeBean.setImageReaderCreateWeight(zbarImageW);
-
-                        MyGlRenderFilter.setBarIdList(barId);
-//                        Log.d(TAG,"A____ZZZ_ZBAR bound1");
-                        Constant.start_time = System.currentTimeMillis();
+                        Log.d("onScanResult","result : "+scanStr );
+                        thisTimeList.add(scanStr);
 
                     }
+                    setLastTimeZbarList(thisTimeList);
 
+                    boolean isSame = isTwoArrayListSame(lastResultBeanList ,thisTimeList);
+
+                    if(isSame){
+                        //NOTHING draw same pic
+//                        Log.d(TAG,"AAA_isSame :"+isSame);
+                        ArrayList<ZBarCodeBean> list = getZbarBeanList();
+                        for(int i=0; i<list.size();i++){
+                            barId = barId+1;
+                            String scanStr = list.get(i).getZbarcodeString();
+                            int bound1 = list.get(i).getBound1();
+                            int bound2 = list.get(i).getBound2();
+                            int bound3 = list.get(i).getBound3();
+                            int bound4 = list.get(i).getBound4();
+                            int zbarImageH = list.get(i).getImageReaderCreateHeight();
+                            int zbarImageW = list.get(i).getImageReaderCreateWeight();
+                            Bitmap bitmap = list.get(i).getTextBitmap();
+
+                            setBarCodeDataInMemory(scanStr,bound1,bound2,bound3,bound4,zbarImageH
+                                    ,zbarImageW,bitmap,thisTimeList,cloneZBarcodeBeanArrayList);
+                        }
+
+                    }else{
+//                        Log.d(TAG,"AAA_isSame :"+isSame);
+                        //save data
+                        //2
+                        for(int i = 0 ; i< jsonArray.length() ; i++){
+                            barId = barId+1;
+                            JSONObject scanResultJSONObject = jsonArray.getJSONObject(i);
+                            String scanStr = scanResultJSONObject.getString(Constant.ZBAR_BARCODE_SCAN_RESULT);
+                            int bound1 = scanResultJSONObject.getInt(Constant.ZBAR_BARCODE_BOUND1);
+                            int bound2 = scanResultJSONObject.getInt(Constant.ZBAR_BARCODE_BOUND2);
+                            int bound3 = scanResultJSONObject.getInt(Constant.ZBAR_BARCODE_BOUND3);
+                            int bound4 = scanResultJSONObject.getInt(Constant.ZBAR_BARCODE_BOUND4);
+                            int zbarImageH = scanResultJSONObject.getInt(Constant.ZBAR_BARCODE_IMAGE_HIGHT);
+                            int zbarImageW = scanResultJSONObject.getInt(Constant.ZBAR_BARCODE_IMAGE_WEIGHT);
+                            Log.d("onScanResult","result : "+scanStr );
+
+//                          //Create Bitmap
+                            Bitmap textZBitmap = ImageUtil.drawText(scanStr , 300 , 50 , Color.TRANSPARENT);
+                            //save data in memory
+                            setBarCodeDataInMemory(scanStr,bound1,bound2,bound3,bound4,zbarImageH
+                                    ,zbarImageW,textZBitmap,thisTimeList,cloneZBarcodeBeanArrayList);
+                        }
+                    }
+
+                    //save clone list
+                    setZbarBeanList(cloneZBarcodeBeanArrayList);
 
                 } catch (JSONException e) {
                     e.printStackTrace();
@@ -397,6 +435,89 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         }).start();
     }
 
+    //clone last list
+    ArrayList<ZBarCodeBean> zBarcodeBeanArrayList;
+    private void setZbarBeanList(ArrayList<ZBarCodeBean> _zBarcodeBeanArrayList){
+        zBarcodeBeanArrayList = _zBarcodeBeanArrayList;
+    }
+
+    private ArrayList<ZBarCodeBean> getZbarBeanList(){
+        return zBarcodeBeanArrayList;
+    }
+
+    ArrayList<String> lastTimeZabrResultList;
+    private void setLastTimeZbarList(ArrayList<String> lastResultList){
+        lastTimeZabrResultList = lastResultList;
+    }
+
+    private ArrayList<String> getLastTimeZbarResultList(){
+        return lastTimeZabrResultList;
+    }
+
+    private void setBarCodeDataInMemory(String scanStr , int bound1 , int bound2
+            ,int bound3,int bound4,int zbarImageH,int zbarImageW
+            ,Bitmap textZBitmap, ArrayList<String> thisTimeList
+            ,ArrayList<ZBarCodeBean> cloneZBarcodeBeanArrayList){
+
+        ZBarCodeBean barcodeBean = new ZBarCodeBean(scanStr,textZBitmap);
+//        MyGlRenderFilter.getZBarcodeBeanMap().put(barId , barcodeBean);
+        barcodeBean.setZbarcodeString(scanStr);
+
+        Log.d(TAG,"ZZZ_ZBAR bound1 : "+bound1+" bound2 : "+bound2
+                +" bound3 : "+bound3+" bound4 :"+bound4+" scanStr : "+scanStr);
+
+        barcodeBean.setBound1(bound1);
+        barcodeBean.setBound2(bound2);
+        barcodeBean.setBound3(bound3);
+        barcodeBean.setBound4(bound4);
+        barcodeBean.setImageReaderCreateHeight(zbarImageH);
+        barcodeBean.setImageReaderCreateWeight(zbarImageW);
+        barcodeBean.setTextBitmap(textZBitmap);
+
+        //preivew
+        ZbarQueue zbarQueue = ZbarQueue.getInstance();
+        zbarQueue.addQueue(barcodeBean);
+
+
+        MyGlRenderFilter.setBarIdList(barId);
+        thisTimeList.add(scanStr);
+//      Log.d(TAG,"A____ZZZ_ZBAR bound1");
+//      Constant.start_time = System.currentTimeMillis();
+        cloneZBarcodeBeanArrayList.add(barcodeBean);
+    }
+
+
+
+    //containsAll is more faster
+    private Boolean isTwoArrayListSame(ArrayList<String> selectPinkLastTimeList , ArrayList<String> selectPinkNowList){
+        boolean isSame = false;
+
+        if(selectPinkLastTimeList==null){
+            isSame = false;
+        }else{
+
+            if(selectPinkLastTimeList.size()==selectPinkNowList.size()){
+                isSame = true;
+            }else{
+                Collection<String> before = new ArrayList(selectPinkLastTimeList);
+                Collection<String> after = new ArrayList(selectPinkNowList);
+
+                List<String> beforeList = new ArrayList<String>(before);
+                List<String> afterList = new ArrayList<String>(after);
+
+                boolean a = beforeList.containsAll(afterList);
+                boolean b = afterList.containsAll(beforeList);
+
+                if(a==b)
+                    isSame = true;
+                else
+                    isSame = false;
+            }
+//        Log.d(TAG,"AAA_resultList : "+isSame);
+        }
+
+        return isSame;
+    }
 
     @Override
     protected void onStart() {
@@ -690,21 +811,50 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         }
 
         if (useCamera2 && mCameraDelegate != null) {
-            int screenRotation = ScreenUtil.getScreenRotation(this);
-            //mPreview.start(mCamera2Source, mGraphicOverlay);
-            StartCameraSourceBean startCameraSourceBean = new StartCameraSourceBean();
-            StartCameraSourceBean.Camera2SourceBean camera2SourceBean = new StartCameraSourceBean.Camera2SourceBean();
-            camera2SourceBean.set_offScreenSurfaceTexture(offScreenSurfaceTexture);
-            camera2SourceBean.setDisplayOrientation(screenRotation);
-            camera2SourceBean.setPreviewSurfaceTexture(previewSurfaceTexture);
-            camera2SourceBean.setTextureView(txv_cameraPreviewWithFilter);
-            startCameraSourceBean.setCamera2SourceBean(camera2SourceBean);
-            startCameraSourceBean.setCamera1SourceBean(null);
 
-            mCameraDelegate.startCameraSource(startCameraSourceBean);
+            CameraManager cameraManager = (CameraManager) getSystemService(CAMERA_SERVICE);
+            String[] cameraIdList = new String[0];
 
-            //myVideoEncoderStream1.setEncoderCanvasInfo(previewEglCtx,previewRawTexture,previewSurfaceTexture);
-            myVideoEncoderStream1.startCodec();
+            try {
+                cameraIdList = cameraManager.getCameraIdList();
+
+                cameraId = cameraIdList[0];
+                CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraId);
+                int deviceRotation = getWindowManager().getDefaultDisplay().getRotation();
+                Point displaySize = new Point();
+                getWindowManager().getDefaultDisplay().getSize(displaySize);
+                // Find the rotation of the device relative to the camera sensor's orientation.
+                int totalRotation = sensorToDeviceRotation(characteristics, deviceRotation);
+                boolean swappedDimensions = totalRotation == 90 || totalRotation == 270;
+
+
+                int screenRotation = ScreenUtil.getScreenRotation(this);
+                //mPreview.start(mCamera2Source, mGraphicOverlay);
+                StartCameraSourceBean startCameraSourceBean = new StartCameraSourceBean();
+                StartCameraSourceBean.Camera2SourceBean camera2SourceBean = new StartCameraSourceBean.Camera2SourceBean();
+                camera2SourceBean.set_offScreenSurfaceTexture(offScreenSurfaceTexture);
+                camera2SourceBean.setDisplayOrientation(screenRotation);
+                camera2SourceBean.setPreviewSurfaceTexture(previewSurfaceTexture);
+                camera2SourceBean.setTextureView(txv_cameraPreviewWithFilter);
+                if(swappedDimensions){
+                    camera2SourceBean.setStreamingResolutionH(stream1Size.getWidth());
+                    camera2SourceBean.setStreamingResolutionW(stream1Size.getHeight());
+                }else{
+                    camera2SourceBean.setStreamingResolutionH(stream1Size.getHeight());
+                    camera2SourceBean.setStreamingResolutionW(stream1Size.getWidth());
+                }
+                startCameraSourceBean.setCamera2SourceBean(camera2SourceBean);
+                startCameraSourceBean.setCamera1SourceBean(null);
+
+                mCameraDelegate.startCameraSource(startCameraSourceBean);
+
+                //myVideoEncoderStream1.setEncoderCanvasInfo(previewEglCtx,previewRawTexture,previewSurfaceTexture);
+                myVideoEncoderStream1.startCodec();
+
+            } catch (CameraAccessException e) {
+                e.printStackTrace();
+            }
+
 
         }else{
             initCamera();
@@ -883,14 +1033,38 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 
             for (Symbol sym : symSet){
                 try {
+                    /**
+                     * 轉換座標,  STREAMING_RESOLUTION to previewSize
+                     * */
+
+
+                    int  previewW = previewSize.getWidth();
+                    int  previewH = previewSize.getHeight();
+                    double s1 = (double)previewW / (double)imageWidth;
+                    double s2 = (double)previewH / (double)imageHeight;
+                    double b1 = ((double)(sym.getBounds()[0])*s1);
+                    double b2 = ((double)(sym.getBounds()[1])*s2);
+                    double b3 = ((double)(sym.getBounds()[2])*s1);
+                    double b4 = ((double)(sym.getBounds()[3])*s2);
+
+                    long b1Round = Math.round(b1);
+                    long b2Round = Math.round(b2);
+                    long b3Round = Math.round(b3);
+                    long b4Round = Math.round(b4);
+
+//                        Log.d(TAG,"AAA_ZBarcodeBean Round B1 : "+b1Round+" b2 : "
+//                                +b2Round+" b3 : "+b3Round+" b4 : "+b4Round);
+
                     JSONObject scanResultJsonObject = new JSONObject();
                     scanResultJsonObject.put(Constant.ZBAR_BARCODE_SCAN_RESULT , sym.getData());
-                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_BOUND1 , sym.getBounds()[0]);
-                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_BOUND2 , sym.getBounds()[1]);
-                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_BOUND3 , sym.getBounds()[2]);
-                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_BOUND4 , sym.getBounds()[3]);
-                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_IMAGE_HIGHT , imageHeight);
-                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_IMAGE_WEIGHT , imageWidth);
+                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_BOUND1 , (int)b1Round);
+                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_BOUND2 , (int)b2Round);
+                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_BOUND3 , (int)b3Round);
+                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_BOUND4 , (int)b4Round);
+                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_IMAGE_HIGHT , previewSize.getHeight());
+                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_IMAGE_WEIGHT , previewSize.getWidth());
+
+
 
                     jsonArrayObject.put(scanResultJsonObject);
 
@@ -911,6 +1085,9 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
             //                message.obj = resultStr;
             message.obj = jsonArrayObject.toString();
             message.sendToTarget();
+
+            //free json
+            jsonArrayObject = null;
         }
 
 

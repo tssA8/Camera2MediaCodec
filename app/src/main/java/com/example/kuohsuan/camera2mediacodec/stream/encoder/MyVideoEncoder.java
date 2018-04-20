@@ -59,6 +59,7 @@ public class MyVideoEncoder extends MyBaseEncoder{
 
         try {
             codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
+//            codec = MediaCodec.createByCodecName("OMX.qcom.video.encoder.avc");
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -67,7 +68,7 @@ public class MyVideoEncoder extends MyBaseEncoder{
 
         mediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface); //COLOR_FormatSurface
         mediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, bitRate);//500kbps
-        mediaFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 30);
+        mediaFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 20);
         //ediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible);
 
         //mediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT,

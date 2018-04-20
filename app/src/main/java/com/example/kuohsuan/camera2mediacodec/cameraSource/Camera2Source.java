@@ -209,6 +209,8 @@ public class Camera2Source implements ICameraAction {
     private CameraPreviewTextureView mTextureView;
     private SurfaceTexture previewSurfaceTexture;
     private SurfaceTexture offScreenSurfaceTexture;
+    private int streamingResolutionH;
+    private int streamingResolutionW;
 
     private ShutterCallback mShutterCallback;
 
@@ -362,15 +364,10 @@ public class Camera2Source implements ICameraAction {
             }
 
             if(mIYuvDataCallback !=null){
-                mIYuvDataCallback.getYuv(convertYUV420888ToNV21Grey(mImage),mPreviewSize.getWidth(),mPreviewSize.getHeight());
-//                mIYuvDataCallback.getYuv(getDataFromImage(mImage,COLOR_FormatNV21),mPreviewSize.getWidth(),mPreviewSize.getHeight());
+                mIYuvDataCallback.getYuv(convertYUV420888ToNV21Grey(mImage),mImage.getWidth(),mImage.getHeight());
             }
             mImage.close();
-            //這邊如果要兩個都用會壞掉！！！ 所以只能擇一 mIYuvDataCallback or mFrameProcessor
-//            if(mFrameProcessor!=null) {
-//                mFrameProcessor.setNextFrame(convertYUV420888ToNV21(mImage));
-//                mImage.close();
-//            }
+
         }
     };
 
@@ -604,6 +601,8 @@ public class Camera2Source implements ICameraAction {
                     mTextureView = camera2SourceBean.getTextureView();
                     previewSurfaceTexture = camera2SourceBean.getPreviewSurfaceTexture();
                     offScreenSurfaceTexture = camera2SourceBean.get_offScreenSurfaceTexture();
+                    streamingResolutionH = camera2SourceBean.getStreamingResolutionH();
+                    streamingResolutionW = camera2SourceBean.getStreamingResolutionW();
                     if (mTextureView.isAvailable()) {
                         setUpCameraOutputs(mTextureView.getWidth(), mTextureView.getHeight());
                     }
@@ -1105,7 +1104,7 @@ public class Camera2Source implements ICameraAction {
             BestPictureSizeResultBean bestPictureSizeResultBean = getBestAspectPictureSizes(pictureInfoBean);
 
             Size camera2Size = bestPictureSizeResultBean.getSizeCamera2();
-            mImageReaderStill = ImageReader.newInstance(camera2Size.getWidth(), camera2Size.getHeight(), ImageFormat.JPEG, /*maxImages*/2);
+            mImageReaderStill = ImageReader.newInstance(streamingResolutionW,streamingResolutionH, ImageFormat.JPEG, /*maxImages*/2);
             mImageReaderStill.setOnImageAvailableListener(mOnImageAvailableListener, mBackgroundHandler);
 
             sensorArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
@@ -1433,16 +1432,19 @@ public class Camera2Source implements ICameraAction {
     }
 
 
+    byte[] data=null;
     private byte[] convertYUV420888ToNV21Grey(Image imgYUV420) {
         // Converting YUV_420_888 data to NV21.
-        byte[] data;
+
         ByteBuffer buffer0 = imgYUV420.getPlanes()[0].getBuffer();
-//        ByteBuffer buffer2 = imgYUV420.getPlanes()[2].getBuffer();
-        int buffer0_size = buffer0.remaining();
-//        int buffer2_size = buffer2.remaining();
-        data = new byte[buffer0_size ];
+        int buffer0_size = (imgYUV420.getHeight())*(imgYUV420.getWidth());
+        Log.d(TAG," buffer0 SIZE : "+buffer0_size);
+
+        if(data==null)
+            data = new byte[buffer0_size ];
+
         buffer0.get(data, 0, buffer0_size);
-//        buffer2.get(data, buffer0_size, buffer2_size);
+
         return data;
     }
 
