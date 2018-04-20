@@ -6,6 +6,7 @@
 2.use camera2
 3.use zbar to scan barcode
 4.use opengl to draw zbar result (from android-openGL-canvas)
+5.transform zbar result x ais and y ais to preview x ais and y ais location.(eg 3840*2160 to 1280*768 draw opengl )
 ```
 
 usage
