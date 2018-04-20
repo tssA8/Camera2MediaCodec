@@ -11,3 +11,6 @@ preivew
 -----
 
 ￼￼￼![alt text](https://serving.photos.photobox.com/314167626a7d55376ab63d583d9df972d8aa18ff8601dd85abc2f4b2b5e02e352335433c.jpg)
+
+
+ps: android-openGL-canvas can see(https://github.com/ChillingVan/android-openGL-canvas)
