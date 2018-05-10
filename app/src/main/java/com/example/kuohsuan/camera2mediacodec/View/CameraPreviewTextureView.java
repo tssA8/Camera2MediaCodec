@@ -30,7 +30,6 @@ import android.support.annotation.Nullable;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.util.Size;
-import android.view.View;
 
 import com.chillingvan.canvasgl.ICanvasGL;
 import com.chillingvan.canvasgl.glcanvas.BasicTexture;
@@ -53,7 +52,11 @@ public class CameraPreviewTextureView extends GLSurfaceTextureProducerView imple
     private static GLPaint paint;
     private static GLPaint _paint;
     private int rotation = 90;
-
+    //temp last time data
+    private Bitmap lastTimeBitmap=null;
+    private int tempX=0;
+    private int tempY=0;
+    private long countFrame=0;
 
 
     public CameraPreviewTextureView(Context context) {
@@ -72,7 +75,7 @@ public class CameraPreviewTextureView extends GLSurfaceTextureProducerView imple
         if (width < 0 || height < 0) {
             throw new IllegalArgumentException("Size cannot be negative.");
         }
-        Log.d(TAG,"setAspectRatio  height : "+height +" width : "+width);
+//        Log.d(TAG,"setAspectRatio  height : "+height +" width : "+width);
         ratioWidth = width;
         ratioHeight = height;
         requestLayout();
@@ -81,11 +84,21 @@ public class CameraPreviewTextureView extends GLSurfaceTextureProducerView imple
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-        int width = View.MeasureSpec.getSize(widthMeasureSpec);
-        int height = View.MeasureSpec.getSize(heightMeasureSpec);
+        int width = MeasureSpec.getSize(widthMeasureSpec);
+        int height = MeasureSpec.getSize(heightMeasureSpec);
         if (0 == ratioWidth || 0 == ratioHeight) {
             setMeasuredDimension(width, height);
         } else {
+//            if (width < height * ratioWidth / ratioHeight) {
+//                setMeasuredDimension(width, width * ratioHeight / ratioWidth);
+//                Log.d(TAG,"setMeasuredDimension width < height  , width : "+width * ratioHeight / ratioWidth
+//                        +" height : "+width);
+//            } else {
+//                setMeasuredDimension(height * ratioWidth / ratioHeight, height);
+//                Log.d(TAG,"setMeasuredDimension  , width : "+height * ratioWidth / ratioHeight
+//                        +" height : "+height);
+//            }
+
             setMeasuredDimension(width,height);
 //            Log.d(TAG,"setMeasuredDimension  , width : "+width
 //                        +" height : "+height);
@@ -94,7 +107,7 @@ public class CameraPreviewTextureView extends GLSurfaceTextureProducerView imple
 
 
 
-   @Override
+    @Override
     protected void onGLDraw(ICanvasGL canvas, SurfaceTexture producedSurfaceTexture, RawTexture producedRawTexture, @Nullable SurfaceTexture sharedSurfaceTexture, @Nullable BasicTexture sharedTexture) {
         //修正鏡像的問題
         producedRawTexture.setIsFlippedVertically(true);
@@ -157,6 +170,44 @@ public class CameraPreviewTextureView extends GLSurfaceTextureProducerView imple
 */
 
 
+        //use google mobile vision SDK
+//        Map<Integer, Face> faceMap =  MyGlRenderFilter.getFaceMap();
+//        Set<Integer> keySet =  faceMap.keySet();
+//        Iterator<Integer> keySetIterator = keySet.iterator();
+//        while(keySetIterator.hasNext()){
+//            Integer key = keySetIterator.next();
+//            Face face = faceMap.get(key);
+//            if(face!=null && rotatedPreviewSize!=null){
+//
+//                float scaleFactorWidth = canvasWidth/(rotatedPreviewSize.getWidth()/4f);
+//                float scaleFactorHeight = canvasHeight/(rotatedPreviewSize.getHeight()/4f);
+//
+//                float x = face.getPosition().x + face.getWidth() / 2  ;
+//                float y = face.getPosition().y + face.getHeight() / 2;
+//                canvas.drawCircle(x*scaleFactorWidth,  y*scaleFactorHeight , 10, paint);
+//            }
+//        }
+//
+//        //use google mobile vision SDK
+//        Map<Integer, MyGlRenderFilter.BarcodeBean> barcodeMap =  MyGlRenderFilter.getBarcodeBeanMap();
+//        Set<Integer> barcodeMapKeySet =  barcodeMap.keySet();
+//        Iterator<Integer> barcodeMapKeySetIterator = barcodeMapKeySet.iterator();
+//        while(barcodeMapKeySetIterator.hasNext()){
+//            Integer key = barcodeMapKeySetIterator.next();
+//            MyGlRenderFilter.BarcodeBean barcodeBean = barcodeMap.get(key);
+//            if(barcodeBean!=null && rotatedPreviewSize!=null){
+//                Barcode barcode = barcodeBean.getBarcode();
+//                Bitmap textBitmap = barcodeBean.getTextBitmap();
+//                float scaleFactorWidth = canvasWidth/(rotatedPreviewSize.getWidth()/4f);
+//                float scaleFactorHeight = canvasHeight/(rotatedPreviewSize.getHeight()/4f);
+//                RectF rect = new RectF(barcode.getBoundingBox());
+//                canvas.drawBitmap(textBitmap , (int)(rect.centerX()*scaleFactorWidth) ,  (int)(rect.centerY()*scaleFactorHeight));
+//                canvas.drawCircle(rect.centerX()*scaleFactorWidth,  rect.centerY()*scaleFactorHeight , 10, paint);
+//            }
+//        }
+
+
+
         /**
          * 2018 04/19 Peter
          * zbar畫點計算方法 SOP
@@ -194,242 +245,132 @@ public class CameraPreviewTextureView extends GLSurfaceTextureProducerView imple
 
 
         ZbarQueue zbarQueue = ZbarQueue.getInstance();
-        if(zbarQueue!=null){
-            ZBarCodeBean barcodeBean = zbarQueue.getBeanInQueue();
-            if(barcodeBean!=null ){
-                //MyGlRenderFilter.ZBarcodeBean barcode = barcodeBean.getBarcode();
-                Bitmap textBitmap = barcodeBean.getTextBitmap();
+        ZBarCodeBean barcodeBean = zbarQueue.getBeanInQueue();
+        if(barcodeBean!=null ){
+//            Log.d(TAG,"AAA_barcodeBean is : "+barcodeBean+" draw last time bitmap __countFrame : "+countFrame);
+            //MyGlRenderFilter.ZBarcodeBean barcode = barcodeBean.getBarcode();
+            Bitmap textBitmap = barcodeBean.getTextBitmap();
 
 //                    Log.d(TAG,"AAA_ZBarcodeBean X : "+barcodeBean.getBound2()+" Y : "+barcodeBean.getBound1());
 
-                int diff = (barcodeBean.getBound3()/2);
-                int diff2 = (barcodeBean.getBound4()/2);
+            int diff = (barcodeBean.getBound3()/2);
+            int diff2 = (barcodeBean.getBound4()/2);
 //                    int x = canvasWidth-barcodeBean.getBound2()-diff;
 //                    int y =  barcodeBean.getBound1()+diff;
 //
 //                    int x = canvasWidth-barcodeBean.getBound2();
 //                    int y =  barcodeBean.getBound1();
 
-                int barcodeWeight = barcodeBean.getImageReaderCreateWeight();
-                int barcodeHeight = barcodeBean.getImageReaderCreateHeight();
-                if(barcodeHeight==0 || barcodeWeight==0){
-                    //divide by zero
+            int previewSizeWidth = barcodeBean.getImageReaderCreateWeight();
+            int previewSizeHeight = barcodeBean.getImageReaderCreateHeight();
+            if(previewSizeHeight==0 || previewSizeWidth==0){
+                //divide by zero
 
-                }else{
+            }else{
 
-                    rotation = MyGlRenderFilter.getDeviceRotation();
-                    //                       double sin = Math.abs(Math.sin(Math.toRadians(rotation))), cos = Math.abs(Math.cos(Math.toRadians(rotation)));
-                    boolean swappedDimensions = rotation == 90 || rotation == 270;
+                rotation = MyGlRenderFilter.getDeviceRotation();
+                //                       double sin = Math.abs(Math.sin(Math.toRadians(rotation))), cos = Math.abs(Math.cos(Math.toRadians(rotation)));
+                boolean swappedDimensions = rotation == 90 || rotation == 270;
 
-                    float s1 = 0;
-                    float s2 = 0  ;
-                    float ratio =0;
-                    float offsetX = 0;
-                    float offsetY = 0;
+                float s1 = 0;
+                float s2 = 0  ;
+                float ratio =0;
+                float offsetX = 0;
+                float offsetY = 0;
 
-                    //temp formula display rotate 270 for preview
-                    if(swappedDimensions){
-
-                        s1 = producedRawTexture.getHeight() / barcodeWeight  ;
-                        s2 = producedRawTexture.getWidth() / barcodeHeight  ;
+                //temp formula display rotate 270 for preview
+                if(swappedDimensions){
+                    s1 = producedRawTexture.getHeight() / previewSizeWidth  ;
+                    s2 = producedRawTexture.getWidth() / previewSizeHeight  ;
 //                                offsetX = (barcodeWeight - (producedRawTexture.getHeight()/ratio) )/2;
 //                                offsetY = (barcodeHeight - (producedRawTexture.getWidth()/ratio) )/2;
-
-                    }else{
-                        s1 = producedRawTexture.getHeight() / barcodeHeight  ;
-                        s2 = producedRawTexture.getWidth() / barcodeWeight  ;
+                }else{
+                    s1 = producedRawTexture.getHeight() / previewSizeHeight  ;
+                    s2 = producedRawTexture.getWidth() / previewSizeWidth  ;
 //                                offsetX = (barcodeHeight - (producedRawTexture.getHeight()/ratio) )/2;
 //                                offsetY = (barcodeWeight - (producedRawTexture.getWidth()/ratio) )/2;
+                }
+                ratio = Math.max(s1,s2);
+                //                    canvas.drawCircle(((barcodeBean.getBound2()+diff-offsetY) *ratio ) , (producedRawTexture.getHeight()-((barcodeBean.getBound1()+diff-offsetX) *ratio)) , 20,_paint);
+                //                    canvas.drawBitmap(textBitmap , (int) ((barcodeBean.getBound2()+diff-offsetY) *ratio), (int) (producedRawTexture.getHeight()-((barcodeBean.getBound1()+diff-offsetX) *ratio)));
+                //                    Log.w(TAG,"AAA_ZBarcodeBean ADJUST x:"+ (barcodeBean.getBound2()+diff-offsetY) *ratio + " y : "+(producedRawTexture.getHeight()-((barcodeBean.getBound1()+diff-offsetX) *ratio)));
+                //                    //rotate
 
-                    }
-                    ratio = Math.max(s1,s2);
+                if (swappedDimensions) {
+                    canvasHeight = producedRawTexture.getWidth();
+                    canvasWidth = producedRawTexture.getHeight();
+                    offsetX = (barcodeBean.getImageReaderCreateWeight() - (canvasWidth/ratio) )/2;
+                    offsetY = (barcodeBean.getImageReaderCreateHeight() - (canvasHeight/ratio) )/2;
+                }else{
+                    canvasHeight = producedRawTexture.getHeight();
+                    canvasWidth = producedRawTexture.getWidth();
+                    offsetX = (barcodeBean.getImageReaderCreateWeight() - (canvasWidth/ratio) )/2;
+                    offsetY = (barcodeBean.getImageReaderCreateHeight() - (canvasHeight/ratio) )/2;
+                }
+                //                    float ratio = Math.max(s1,s2);
 
-                    //                    canvas.drawCircle(((barcodeBean.getBound2()+diff-offsetY) *ratio ) , (producedRawTexture.getHeight()-((barcodeBean.getBound1()+diff-offsetX) *ratio)) , 20,_paint);
-                    //                    canvas.drawBitmap(textBitmap , (int) ((barcodeBean.getBound2()+diff-offsetY) *ratio), (int) (producedRawTexture.getHeight()-((barcodeBean.getBound1()+diff-offsetX) *ratio)));
-                    //                    Log.w(TAG,"AAA_ZBarcodeBean ADJUST x:"+ (barcodeBean.getBound2()+diff-offsetY) *ratio + " y : "+(producedRawTexture.getHeight()-((barcodeBean.getBound1()+diff-offsetX) *ratio)));
-
-                    //                    //rotate
-
+                int moveX =0;
+                int moveY =0;
+                int caculateX = (int) ((barcodeBean.getBound2()+diff2-offsetY) *ratio);
+                int caculateY = (int) (((barcodeBean.getBound1()+diff-offsetX) *ratio));
+                if(rotation==90){
                     if (swappedDimensions) {
-                        canvasHeight = producedRawTexture.getWidth();
-                        canvasWidth = producedRawTexture.getHeight();
-                        offsetX = (barcodeBean.getImageReaderCreateWeight() - (canvasWidth/ratio) )/2;
-                        offsetY = (barcodeBean.getImageReaderCreateHeight() - (canvasHeight/ratio) )/2;
+                        moveX  = canvasHeight;
                     }else{
-                        canvasHeight = producedRawTexture.getHeight();
-                        canvasWidth = producedRawTexture.getWidth();
-                        offsetX = (barcodeBean.getImageReaderCreateWeight() - (canvasWidth/ratio) )/2;
-                        offsetY = (barcodeBean.getImageReaderCreateHeight() - (canvasHeight/ratio) )/2;
+                        moveX =  canvasWidth;
                     }
-                    //                    float ratio = Math.max(s1,s2);
-
-                    int moveX =0;
-                    int moveY =0;
-                    int caculateX = (int) ((barcodeBean.getBound2()+diff2-offsetY) *ratio);
-                    int caculateY = (int) (((barcodeBean.getBound1()+diff-offsetX) *ratio));
-                    if(rotation==90){
-                        if (swappedDimensions) {
-                            moveX  =  canvasHeight;
-                        }else{
-                            moveX =  canvasWidth;
-                        }
-                        caculateX = moveX - caculateX;
-                    }else if(rotation==270){
-                        if (swappedDimensions) {
-                            moveY = canvasWidth;
-                        }else{
-                            moveY =  canvasHeight;
-                        }
-                        caculateY = moveY - caculateY;
-                    }else if(rotation==180){
-                        if (swappedDimensions) {
-                            moveX = canvasHeight;
-                            moveY = canvasWidth;
-                        }else{
-                            moveX =  canvasWidth;
-                            moveY = canvasHeight;
-                        }
-                        caculateX = moveX - caculateX;
-                        caculateY = moveY - caculateY;
+                    caculateX = moveX - caculateX;
+                }else if(rotation==270){
+                    if (swappedDimensions) {
+                        moveY = canvasWidth;
+                    }else{
+                        moveY =  canvasHeight;
                     }
+                    caculateY = moveY - caculateY;
+                }else if(rotation==180){
+                    if (swappedDimensions) {
+                        moveX = canvasHeight;
+                        moveY = canvasWidth;
+                    }else{
+                        moveX =  canvasWidth;
+                        moveY = canvasHeight;
+                    }
+                    caculateX = moveX - caculateX;
+                    caculateY = moveY - caculateY;
+                }
 
 //                            Log.d(TAG,"AAA_ZBarcodeBean  rotation : "+rotation+" "+" matrix caculate caculateX : "+caculateX+ " caculateY : "+caculateY);
-                    //
-                    canvas.drawBitmap(textBitmap , caculateX ,caculateY);
-                    canvas.drawCircle(caculateX,  caculateY , 10, _paint);
+                //
+                canvas.drawBitmap(textBitmap , caculateX ,caculateY);
+                canvas.drawCircle(caculateX,  caculateY , 10, _paint);
 
+                lastTimeBitmap = textBitmap;
+                tempX=caculateX;
+                tempY=caculateY;
+                countFrame=0;
+            }
+        }else{
+//            Log.d(TAG,"AAA_barcodeBean is : "+barcodeBean+" draw last time bitmap __countFrame : "+countFrame);
+            if(lastTimeBitmap!=null){
+                if(countFrame>=Long.MAX_VALUE){
+                    countFrame=0;
+                    Log.d(TAG,"Prevent overflow!!!");
+                }else{
+                    countFrame+=1;
+                    if(countFrame<=30){
+                        canvas.drawBitmap(lastTimeBitmap , tempX ,tempY);
+                        canvas.drawCircle(tempX,  tempY , 10, _paint);
+                    }else{
+                        lastTimeBitmap=null;
+                        tempX=0;
+                        tempY=0;
+                    }
                 }
             }
         }
 
-
-        //zbar
-//        Map<Integer, MyGlRenderFilter.ZBarcodeBean> _zbarcodeMap =  MyGlRenderFilter.getZBarcodeBeanMap();
-//        if(_zbarcodeMap!=null){
-//            Set<Integer> zbarcodeMapKeySet =  _zbarcodeMap.keySet();
-//            Iterator<Integer> zbarcodeMapKeySetIterator = zbarcodeMapKeySet.iterator();
-//            while(zbarcodeMapKeySetIterator.hasNext()){
-//                Integer key = zbarcodeMapKeySetIterator.next();
-//                MyGlRenderFilter.ZBarcodeBean barcodeBean = _zbarcodeMap.get(key);
-//                if(barcodeBean!=null ){
-//                    //MyGlRenderFilter.ZBarcodeBean barcode = barcodeBean.getBarcode();
-//                    Bitmap textBitmap = barcodeBean.getTextBitmap();
-//
-////                    Log.d(TAG,"AAA_ZBarcodeBean X : "+barcodeBean.getBound2()+" Y : "+barcodeBean.getBound1());
-//
-//                    int diff = (barcodeBean.getBound3()/2);
-//                    int diff2 = (barcodeBean.getBound4()/2);
-////                    int x = canvasWidth-barcodeBean.getBound2()-diff;
-////                    int y =  barcodeBean.getBound1()+diff;
-////
-////                    int x = canvasWidth-barcodeBean.getBound2();
-////                    int y =  barcodeBean.getBound1();
-//
-//                    int barcodeWeight = barcodeBean.getImageReaderCreateWeight();
-//                    int barcodeHeight = barcodeBean.getImageReaderCreateHeight();
-//                    if(barcodeHeight==0 || barcodeWeight==0){
-//                        //divide by zero
-//
-//                    }else{
-//
-//                            rotation = MyGlRenderFilter.getDeviceRotation();
-//    //                       double sin = Math.abs(Math.sin(Math.toRadians(rotation))), cos = Math.abs(Math.cos(Math.toRadians(rotation)));
-//                            boolean swappedDimensions = rotation == 90 || rotation == 270;
-//
-//                            float s1 = 0;
-//                            float s2 = 0  ;
-//                            float ratio =0;
-//                            float offsetX = 0;
-//                            float offsetY = 0;
-//
-//                        //temp formula display rotate 270 for preview
-//                            if(swappedDimensions){
-//
-//                                s1 = producedRawTexture.getHeight() / barcodeWeight  ;
-//                                s2 = producedRawTexture.getWidth() / barcodeHeight  ;
-////                                offsetX = (barcodeWeight - (producedRawTexture.getHeight()/ratio) )/2;
-////                                offsetY = (barcodeHeight - (producedRawTexture.getWidth()/ratio) )/2;
-//
-//                            }else{
-//                                s1 = producedRawTexture.getHeight() / barcodeHeight  ;
-//                                s2 = producedRawTexture.getWidth() / barcodeWeight  ;
-////                                offsetX = (barcodeHeight - (producedRawTexture.getHeight()/ratio) )/2;
-////                                offsetY = (barcodeWeight - (producedRawTexture.getWidth()/ratio) )/2;
-//
-//                            }
-//                            ratio = Math.max(s1,s2);
-//
-//        //                    canvas.drawCircle(((barcodeBean.getBound2()+diff-offsetY) *ratio ) , (producedRawTexture.getHeight()-((barcodeBean.getBound1()+diff-offsetX) *ratio)) , 20,_paint);
-//        //                    canvas.drawBitmap(textBitmap , (int) ((barcodeBean.getBound2()+diff-offsetY) *ratio), (int) (producedRawTexture.getHeight()-((barcodeBean.getBound1()+diff-offsetX) *ratio)));
-//        //                    Log.w(TAG,"AAA_ZBarcodeBean ADJUST x:"+ (barcodeBean.getBound2()+diff-offsetY) *ratio + " y : "+(producedRawTexture.getHeight()-((barcodeBean.getBound1()+diff-offsetX) *ratio)));
-//
-//        //                    //rotate
-//
-//                            if (swappedDimensions) {
-//                                canvasHeight = producedRawTexture.getWidth();
-//                                canvasWidth = producedRawTexture.getHeight();
-//                                offsetX = (barcodeBean.getImageReaderCreateWeight() - (canvasWidth/ratio) )/2;
-//                                offsetY = (barcodeBean.getImageReaderCreateHeight() - (canvasHeight/ratio) )/2;
-//                            }else{
-//                                canvasHeight = producedRawTexture.getHeight();
-//                                canvasWidth = producedRawTexture.getWidth();
-//                                offsetX = (barcodeBean.getImageReaderCreateWeight() - (canvasWidth/ratio) )/2;
-//                                offsetY = (barcodeBean.getImageReaderCreateHeight() - (canvasHeight/ratio) )/2;
-//                            }
-//    //                    float ratio = Math.max(s1,s2);
-//
-//                            int moveX =0;
-//                            int moveY =0;
-//                            int caculateX = (int) ((barcodeBean.getBound2()+diff2-offsetY) *ratio);
-//                            int caculateY = (int) (((barcodeBean.getBound1()+diff-offsetX) *ratio));
-//                            if(rotation==90){
-//                                if (swappedDimensions) {
-//                                    moveX  =  canvasHeight;
-//                                }else{
-//                                    moveX =  canvasWidth;
-//                                }
-//                                caculateX = moveX - caculateX;
-//                            }else if(rotation==270){
-//                                if (swappedDimensions) {
-//                                    moveY = canvasWidth;
-//                                }else{
-//                                    moveY =  canvasHeight;
-//                                }
-//                                caculateY = moveY - caculateY;
-//                            }else if(rotation==180){
-//                                if (swappedDimensions) {
-//                                    moveX = canvasHeight;
-//                                    moveY = canvasWidth;
-//                                }else{
-//                                    moveX =  canvasWidth;
-//                                    moveY = canvasHeight;
-//                                }
-//                                caculateX = moveX - caculateX;
-//                                caculateY = moveY - caculateY;
-//                            }
-//
-////                            Log.d(TAG,"AAA_ZBarcodeBean  rotation : "+rotation+" "+" matrix caculate caculateX : "+caculateX+ " caculateY : "+caculateY);
-//    //
-//                            canvas.drawBitmap(textBitmap , caculateX ,caculateY);
-//                            canvas.drawCircle(caculateX,  caculateY , 10, _paint);
-//
-//                        }
-//                    }
-//
-//            }
-//            //TODO add Queue or Stack to handle Map
-////            //if draw done , remove item from the Map  immediately!!!!!
-////            ArrayList<Integer> zbarList = (ArrayList<Integer>) getBarIdList().clone();
-////            getBarIdList().clear();
-////            if(zbarList!=null && zbarList.size()>0){
-////                MyGlRenderFilter.getZBarcodeBeanMap().clear();
-////            }
-//
-//
-//        }
-
-
-
     }
+
+
 
 }

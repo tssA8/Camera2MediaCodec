@@ -29,7 +29,6 @@ import android.os.Looper;
 import android.os.Message;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.text.TextUtils;
 import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
@@ -52,6 +51,7 @@ import com.example.kuohsuan.camera2mediacodec.R;
 import com.example.kuohsuan.camera2mediacodec.View.CameraPreviewTextureView;
 import com.example.kuohsuan.camera2mediacodec.View.EncoderCanvas;
 import com.example.kuohsuan.camera2mediacodec.View.IAutoFixView;
+import com.example.kuohsuan.camera2mediacodec.ZbarProcessorRunnable;
 import com.example.kuohsuan.camera2mediacodec.bean.StartCameraSourceBean;
 import com.example.kuohsuan.camera2mediacodec.bean.ZBarCodeBean;
 import com.example.kuohsuan.camera2mediacodec.cameraSource.Camera2Source;
@@ -62,11 +62,8 @@ import com.example.kuohsuan.camera2mediacodec.stream.encoder.MyVideoEncoder;
 import com.example.kuohsuan.camera2mediacodec.util.FileUtils;
 import com.example.kuohsuan.camera2mediacodec.util.ImageUtil;
 import com.example.kuohsuan.camera2mediacodec.util.ScreenUtil;
+import com.example.kuohsuan.camera2mediacodec.util.ViewStateUtil;
 import com.example.kuohsuan.camera2mediacodec.util.ZbarQueue;
-import com.yanzhenjie.zbar.Config;
-import com.yanzhenjie.zbar.ImageScanner;
-import com.yanzhenjie.zbar.Symbol;
-import com.yanzhenjie.zbar.SymbolSet;
 import com.yanzhenjie.zbar.camera.ScanCallback;
 
 import org.json.JSONArray;
@@ -129,15 +126,14 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
     // MUST BE CAREFUL USING THIS VARIABLE.
     // ANY ATTEMPT TO START CAMERA2 ON API < 21 WILL CRASH.
     private boolean useCamera2 = true;
-    // CAMERA VERSION ONE DECLARATIONS
-//    private CameraSource mCameraSource = null;
-    // CAMERA VERSION TWO DECLARATIONS
     private Camera2Source mCamera2Source = null;
     private ICameraAction mCameraDelegate;
     //zBar
-    private ImageScanner zbarImageScanner;
     private Handler mZabrHandler;
     private ScanCallback mZbarCallback;
+
+    //activity state !!!
+    private ViewStateUtil viewStateUtil = ViewStateUtil.getInstance();
 
     //streaming resolution
     private static  final int STREAMING_RESOLUTION = 1920;
@@ -192,6 +188,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         }
 
     }
+
     private void initViewEncoder(int resolution) {
         long startRecordWhenNs = System.nanoTime();
         CameraManager cameraManager = (CameraManager) getSystemService(CAMERA_SERVICE);
@@ -299,60 +296,86 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
                     public void onFrameAvailable(SurfaceTexture surfaceTexture) {
                         //Log.d(TAG,"preview_onFrameAvailable");
                         txv_cameraPreviewWithFilter.requestRenderAndWait();
-                        if (offScreenCanvasWithFilter != null)
-                            offScreenCanvasWithFilter.requestRenderAndWait();
+//                        if (offScreenCanvasWithFilter != null)
+//                            offScreenCanvasWithFilter.requestRenderAndWait();
                     }
                 });
 
                 configureTransform(txv_cameraPreviewWithFilter, txv_cameraPreviewWithFilter.getWidth(), txv_cameraPreviewWithFilter.getHeight());
+
                 Log.d(TAG,"txv_cameraPreviewWithFilter.getWidth() : "+txv_cameraPreviewWithFilter.getWidth()
                         +" getHeight() : "+txv_cameraPreviewWithFilter.getHeight()  );
-                if (useCamera2) {
-                    offScreenCanvasWithFilter = new EncoderCanvas(myVideoEncoderStream1.getMyMediaCodecWrapper().width, myVideoEncoderStream1.getMyMediaCodecWrapper().height, myVideoEncoderStream1.getMyMediaCodecWrapper().encoderSurface);
-                } else {
-                    offScreenCanvasWithFilter = new EncoderCanvas(myVideoEncoderStream1.getMyMediaCodecWrapper().width, myVideoEncoderStream1.getMyMediaCodecWrapper().height, previewEglCtx, myVideoEncoderStream1.getMyMediaCodecWrapper().encoderSurface);
-                    offScreenCanvasWithFilter.setSharedTexture(previewRawTexture, previewSurfaceTexture);
-                }
-                offScreenCanvasWithFilter.setOnCreateGLContextListener(new GLThread.OnCreateGLContextListener() {
-                    @Override
-                    public void onCreate(EglContextWrapper eglContext) {
-                        Log.d(TAG, "aaa_offScreenCanvas_oncreate");
-                    }
-                });
-                offScreenCanvasWithFilter.setOnSurfaceTextureSet(new GLSurfaceTextureProducerView.OnSurfaceTextureSet() {
-                    @Override
-                    public void onSet(SurfaceTexture surfaceTexture, RawTexture surfaceTextureRelatedTexture) {
-                        Log.d(TAG, "aaa_offScreenCanvas_onSet");
-                        offScreenSurfaceTexture = surfaceTexture;
-                        offScreenRawTexture = surfaceTextureRelatedTexture;
-                        surfaceTexture.setOnFrameAvailableListener(new SurfaceTexture.OnFrameAvailableListener() {
-                            @Override
-                            public void onFrameAvailable(SurfaceTexture surfaceTexture) {
-                                offScreenCanvasWithFilter.requestRenderAndWait();
-                            }
-                        });
 
-                        startCameraSource();
+                boolean isRunningFrontProcess = viewStateUtil.isRunningAppProcess();
+                startCameraSource();
 
-                    }
-                });
-
-                offScreenCanvasWithFilter.start();
-                offScreenCanvasWithFilter.onResume();
 
             }
         });
 
+        if (useCamera2) {
+            offScreenCanvasWithFilter = new EncoderCanvas(myVideoEncoderStream1.getMyMediaCodecWrapper().width, myVideoEncoderStream1.getMyMediaCodecWrapper().height, myVideoEncoderStream1.getMyMediaCodecWrapper().encoderSurface);
+        } else {
+            offScreenCanvasWithFilter = new EncoderCanvas(myVideoEncoderStream1.getMyMediaCodecWrapper().width, myVideoEncoderStream1.getMyMediaCodecWrapper().height, previewEglCtx, myVideoEncoderStream1.getMyMediaCodecWrapper().encoderSurface);
+            offScreenCanvasWithFilter.setSharedTexture(previewRawTexture, previewSurfaceTexture);
+        }
+        offScreenCanvasWithFilter.setOnCreateGLContextListener(new GLThread.OnCreateGLContextListener() {
+            @Override
+            public void onCreate(EglContextWrapper eglContext) {
+                Log.d(TAG, "aaa_offScreenCanvas_oncreate");
+            }
+        });
+        offScreenCanvasWithFilter.setOnSurfaceTextureSet(new GLSurfaceTextureProducerView.OnSurfaceTextureSet() {
+            @Override
+            public void onSet(SurfaceTexture surfaceTexture, RawTexture surfaceTextureRelatedTexture) {
+                Log.d(TAG, "aaa_offScreenCanvas_onSet");
+                offScreenSurfaceTexture = surfaceTexture;
+                offScreenRawTexture = surfaceTextureRelatedTexture;
+                surfaceTexture.setOnFrameAvailableListener(new SurfaceTexture.OnFrameAvailableListener() {
+                    @Override
+                    public void onFrameAvailable(SurfaceTexture surfaceTexture) {
+                        offScreenCanvasWithFilter.requestRenderAndWait();
+                    }
+                });
+
+            }
+        });
+
+        offScreenCanvasWithFilter.start();
+        offScreenCanvasWithFilter.onResume();
+
+
 
     }
     private com.yanzhenjie.zbar.Image barcode ;
+    private ZbarProcessorRunnable zbarProcessorRunnable;
     @Override
     public void getYuv(byte[] data,int imageWidth, int imageHeight) {
         if(barcode==null ){
             barcode = new com.yanzhenjie.zbar.Image(imageWidth, imageHeight, "Y800");
         }
-        barcode.setData(data);
-        startZbarScan(barcode,imageWidth,imageHeight);
+
+        //new
+        if(zbarProcessorRunnable==null && imageWidth >0 && imageHeight>0){
+            //init Runnable
+            zbarProcessorRunnable = new ZbarProcessorRunnable(
+                    mZabrHandler
+                    ,imageWidth
+                    ,imageHeight
+                    ,previewSize.getWidth()
+                    , previewSize.getHeight()
+                    ,barcode);
+            //start Runnable
+            zbarProcessorRunnable.start();
+
+            Log.d(TAG,"AAA_zbarProcessorRunnable  " +
+                    "previewSize.getWidth() :  " +previewSize.getWidth()+
+                    " previewSize.getHeight() : "+previewSize.getHeight());
+        }
+
+        if(zbarProcessorRunnable!=null)
+            zbarProcessorRunnable.setNextFrame(data);//set Frame
+
     }
 
     private void setZbarResult(final String result){
@@ -530,6 +553,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
     protected void onStop() {
         super.onStop();
         Log.d(TAG, "AAA_onStop");
+        viewStateUtil.setRunningStateProcess(false);
 
     }
 
@@ -666,7 +690,6 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
                 MyGlRenderFilter.setPreviewSize(rotatedSize);
             }
 
-
             int rotation = (characteristics.get(CameraCharacteristics.LENS_FACING) ==
                     CameraCharacteristics.LENS_FACING_FRONT) ?
                     (360 + ORIENTATIONS.get(deviceRotation)) % 360 :
@@ -677,23 +700,6 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
             RectF bufferRect = new RectF(0, 0, previewSize.getHeight(), previewSize.getWidth());
             float centerX = viewRect.centerX();
             float centerY = viewRect.centerY();
-
-            // Initially, output stream images from the Camera2 API will be rotated to the native
-            // device orientation from the sensor's orientation, and the TextureView will default to
-            // scaling these buffers to fill it's view bounds.  If the aspect ratios and relative
-            // orientations are correct, this is fine.
-            //
-            // However, if the device orientation has been rotated relative to its native
-            // orientation so that the TextureView's dimensions are swapped relative to the
-            // native device orientation, we must do the following to ensure the output stream
-            // images are not incorrectly scaled by the TextureView:
-            //   - Undo the scale-to-fill from the output buffer's dimensions (i.e. its dimensions
-            //     in the native device orientation) to the TextureView's dimension.
-            //   - Apply a scale-to-fill from the output buffer's rotated dimensions
-            //     (i.e. its dimensions in the current device orientation) to the TextureView's
-            //     dimensions.
-            //   - Apply the rotation from the native device orientation to the current device
-            //     rotation.
 
             if (Surface.ROTATION_90 == deviceRotation || Surface.ROTATION_270 == deviceRotation) {
                 bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY());
@@ -753,7 +759,6 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
                 decodeMatrix.postTranslate(rotatedViewHeights, rotatedViewWidths);
                 //mViewMatrix.postScale(1, 1);
             }
-
 //            Log.d(TAG,"AAA_totalRotation : "+totalRotation);
 
         } catch (Exception ex) {
@@ -800,8 +805,6 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
             audioRecord.startRecording();
         }
     }
-
-
 
 
     private int barId =0 ;
@@ -869,21 +872,16 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
     }
 
 
-
-
     private MyBaseEncoder.MyEncoderCallBackFunction  myEncoderCallBackFunction = new MyBaseEncoder.MyEncoderCallBackFunction() {
         @Override
         public void encodeAudioSuccess(byte[] encodeDate, int encodeSize , int channelCount,int sampleBit ,int sampleRate) {
-
             //Log.d(TAG,"bbb_encodeAudioSuccess:" + Thread.currentThread().getId());
-
 
         }
 
         @Override
         public void encodeVideoSuccess(byte[] encodeDate, int encodeSize, boolean isVideoKeyFrame, int width, int height) {
 //            Log.d(TAG,"encodeVideoSuccess:isVideoKeyFrame:"+isVideoKeyFrame + ",w:"+width+",h:"+height);
-
         }
 
         @Override
@@ -1004,9 +1002,6 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 
 
     private void initZbarScanner(){
-        zbarImageScanner = new ImageScanner();
-        zbarImageScanner.setConfig(0, Config.X_DENSITY, 3);
-        zbarImageScanner.setConfig(0, Config.Y_DENSITY, 3);
         mZabrHandler = new Handler(Looper.getMainLooper()) {
             @Override
             public void handleMessage(Message msg) {
@@ -1018,80 +1013,6 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
     }
 
 
-    private void startZbarScan(com.yanzhenjie.zbar.Image barcode,int imageWidth, int imageHeight){
-//            Log.d(TAG,"B_________result");
-        long startTime = System.currentTimeMillis();
-        int result = zbarImageScanner.scanImage(barcode);
-        JSONArray jsonArrayObject = new JSONArray();
-
-        String resultStr = "";
-        if (result != 0) {
-            SymbolSet symSet = zbarImageScanner.getResults();
-            long endTime = System.currentTimeMillis();
-
-            Log.d(TAG,"B_________symSet, spend time:" + (endTime-startTime)+" resultStr : "+resultStr);
-
-            for (Symbol sym : symSet){
-                try {
-                    /**
-                     * 轉換座標,  STREAMING_RESOLUTION to previewSize
-                     * */
-
-
-                    int  previewW = previewSize.getWidth();
-                    int  previewH = previewSize.getHeight();
-                    double s1 = (double)previewW / (double)imageWidth;
-                    double s2 = (double)previewH / (double)imageHeight;
-                    double b1 = ((double)(sym.getBounds()[0])*s1);
-                    double b2 = ((double)(sym.getBounds()[1])*s2);
-                    double b3 = ((double)(sym.getBounds()[2])*s1);
-                    double b4 = ((double)(sym.getBounds()[3])*s2);
-
-                    long b1Round = Math.round(b1);
-                    long b2Round = Math.round(b2);
-                    long b3Round = Math.round(b3);
-                    long b4Round = Math.round(b4);
-
-//                        Log.d(TAG,"AAA_ZBarcodeBean Round B1 : "+b1Round+" b2 : "
-//                                +b2Round+" b3 : "+b3Round+" b4 : "+b4Round);
-
-                    JSONObject scanResultJsonObject = new JSONObject();
-                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_SCAN_RESULT , sym.getData());
-                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_BOUND1 , (int)b1Round);
-                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_BOUND2 , (int)b2Round);
-                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_BOUND3 , (int)b3Round);
-                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_BOUND4 , (int)b4Round);
-                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_IMAGE_HIGHT , previewSize.getHeight());
-                    scanResultJsonObject.put(Constant.ZBAR_BARCODE_IMAGE_WEIGHT , previewSize.getWidth());
-
-
-
-                    jsonArrayObject.put(scanResultJsonObject);
-
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                }
-
-
-                resultStr = resultStr  + " : " + sym.getData();
-                int[] bounds = sym.getBounds();
-            }
-
-        }
-
-        if (!TextUtils.isEmpty(resultStr) && result != 0) {
-            Message message = mZabrHandler.obtainMessage();
-            //                Bundle bundle = new Bundle();
-            //                message.obj = resultStr;
-            message.obj = jsonArrayObject.toString();
-            message.sendToTarget();
-
-            //free json
-            jsonArrayObject = null;
-        }
-
-
-    }
 
 
     private void setZabrScanCallback(ScanCallback callback) {
