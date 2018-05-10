@@ -1,6 +1,7 @@
 package com.example.kuohsuan.camera2mediacodec.cameraSource;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -30,6 +31,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.SystemClock;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.content.ContextCompat;
@@ -50,8 +52,10 @@ import com.example.kuohsuan.camera2mediacodec.bean.StartCameraSourceBean;
 import com.example.kuohsuan.camera2mediacodec.util.ScreenUtil;
 import com.google.android.gms.common.images.Size;
 import com.google.android.gms.vision.Detector;
+import com.google.android.gms.vision.Frame;
 
 import java.io.IOException;
+import java.lang.Thread.State;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -69,7 +73,7 @@ import static android.os.Looper.getMainLooper;
 
 /**
  * Camera2Source: Created by Ezequiel Adrian Minniti. Buenos Aires.
- * 
+ *
  * This work is the evolution of the original CameraSource from GoogleSamples.
  * Made by ♥ for the community. You are free to use it anywhere.
  * Just show my name on the credits :)
@@ -95,7 +99,7 @@ public class Camera2Source implements ICameraAction {
     public static final int CAMERA_AF_OFF = CaptureRequest.CONTROL_AF_MODE_OFF;
     public static final int CAMERA_AF_CONTINUOUS_PICTURE = CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE;
     public static final int CAMERA_AF_CONTINUOUS_VIDEO = CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO;
-//    private int mFocusMode = CAMERA_AF_AUTO;
+    //    private int mFocusMode = CAMERA_AF_AUTO;
     private int mFocusMode = CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE;
 
     private static final String TAG = "Camera2Source";
@@ -106,6 +110,7 @@ public class Camera2Source implements ICameraAction {
     private static final SparseIntArray INVERSE_ORIENTATIONS = new SparseIntArray();
     private boolean cameraStarted = false;
     private int mSensorOrientation;
+    private Handler zbarHandler;
 
 
     /**
@@ -205,7 +210,9 @@ public class Camera2Source implements ICameraAction {
      */
     private static final int MAX_PREVIEW_HEIGHT = 1080;
 
-
+    /**
+     * An {@link AutoFitTextureView} for camera preview.
+     */
     private CameraPreviewTextureView mTextureView;
     private SurfaceTexture previewSurfaceTexture;
     private SurfaceTexture offScreenSurfaceTexture;
@@ -248,6 +255,12 @@ public class Camera2Source implements ICameraAction {
      */
     private boolean mFlashSupported;
 
+    /**
+     * Dedicated thread and associated runnable for calling into the detector with frames, as the
+     * frames become available from the camera.
+     */
+    private Thread mProcessingThread;
+    private FrameProcessingRunnable mFrameProcessor;
 
     /**
      * An {@link ImageReader} that handles still image capture.
@@ -357,17 +370,25 @@ public class Camera2Source implements ICameraAction {
     private final ImageReader.OnImageAvailableListener mOnPreviewAvailableListener = new ImageReader.OnImageAvailableListener() {
         @Override
         public void onImageAvailable(ImageReader reader) {
+
+//            Log.d(TAG,"AAA_OnImageAvailableListener mOnPreviewAvailableListener "+" Thread id : "+Thread.currentThread().getId());
+
             final Image mImage = reader.acquireNextImage();
 
             if(mImage == null) {
                 return;
             }
-
-            if(mIYuvDataCallback !=null){
+////            Log.d(TAG,"AAA_mImage.getWidth() : "+mImage.getWidth()+" mImage.getHeight() : "+mImage.getHeight());
+            if(mIYuvDataCallback !=null ){
+//                zbarProcessor(mImage.getWidth(),mImage.getHeight(),convertYUV420888ToNV21Grey(mImage));
                 mIYuvDataCallback.getYuv(convertYUV420888ToNV21Grey(mImage),mImage.getWidth(),mImage.getHeight());
             }
             mImage.close();
-
+            //這邊如果要兩個都用會壞掉！！！ 所以只能擇一 mIYuvDataCallback or mFrameProcessor
+//            if(mFrameProcessor!=null) {
+//                mFrameProcessor.setNextFrame(convertYUV420888ToNV21(mImage));
+//                mImage.close();
+//            }
         }
     };
 
@@ -408,17 +429,13 @@ public class Camera2Source implements ICameraAction {
     // Builder
     //==============================================================================================
 
-
-    //==============================================================================================
-    // Builder
-    //==============================================================================================
-
     /**
      * Builder for configuring and creating an associated camera source.
      */
     public static class Builder {
         private final Detector<?> mDetector;
         private Camera2Source mCameraSource = new Camera2Source();
+
 
         /**
          * Creates a camera source builder with the supplied context and detector.  Camera preview
@@ -464,6 +481,12 @@ public class Camera2Source implements ICameraAction {
             mCameraSource.mFacing = facing;
             return this;
         }
+
+        public Builder setZbarHandler(Handler handler){
+            mCameraSource.zbarHandler = handler;
+            return this;
+        }
+
         public Builder setYuvCallBack(){
             mCameraSource.mIYuvDataCallback = (IYuvDataCallback)mCameraSource.mContext;
             return this;
@@ -474,10 +497,12 @@ public class Camera2Source implements ICameraAction {
          * Creates an instance of the camera source.
          */
         public Camera2Source build() {
+            if(mDetector!=null){
+                mCameraSource.mFrameProcessor = mCameraSource.new FrameProcessingRunnable(mDetector);
+            }
             return mCameraSource;
         }
     }
-
 
     //==============================================================================================
     // Bridge Functionality for the Camera2 API
@@ -577,9 +602,62 @@ public class Camera2Source implements ICameraAction {
      * Stops the camera and releases the resources of the camera and underlying detector.
      */
     public void release() {
+        if(mFrameProcessor!=null) {
+            mFrameProcessor.release();
+        }
         stopCameraSource();
     }
 
+    /**
+     * Closes the camera and stops sending frames to the underlying frame detector.
+     * <p/>
+     * This camera source may be restarted again by calling {@link #start}.
+     * <p/>
+     * Call {@link #release()} instead to completely shut down this camera source and release the
+     * resources of the underlying detector.
+     */
+//    public void stop() {
+//        //TODO:之後要用Factory實作
+//        stopCameraSource();
+////        try {
+////            if(mFrameProcessor!=null) {
+////                mFrameProcessor.setActive(false);
+////                if (mProcessingThread != null) {
+////                    try {
+////                        // Wait for the thread to complete to ensure that we can't have multiple threads
+////                        // executing at the same time (i.e., which would happen if we called start too
+////                        // quickly after stop).
+////                        mProcessingThread.join();
+////                    } catch (InterruptedException e) {
+////                        Log.d(TAG, "Frame processing thread interrupted on release.");
+////                    }
+////                    mProcessingThread = null;
+////                }
+////            }
+////            mCameraOpenCloseLock.acquire();
+////            if (null != mCaptureSession) {
+////                mCaptureSession.close();
+////                mCaptureSession = null;
+////            }
+////            if (null != mCameraDevice) {
+////                mCameraDevice.close();
+////                mCameraDevice = null;
+////            }
+////            if (null != mImageReaderPreview) {
+////                mImageReaderPreview.close();
+////                mImageReaderPreview = null;
+////            }
+////            if (null != mImageReaderStill) {
+////                mImageReaderStill.close();
+////                mImageReaderStill = null;
+////            }
+////        } catch (InterruptedException e) {
+////            throw new RuntimeException("Interrupted while trying to lock camera closing.", e);
+////        } finally {
+////            mCameraOpenCloseLock.release();
+////            stopBackgroundThread();
+////        }
+//    }
 
     @Override
     public void startCameraSource(StartCameraSourceBean startCameraSourceBean) {
@@ -597,6 +675,11 @@ public class Camera2Source implements ICameraAction {
                     cameraStarted = true;
                     startBackgroundThread();
 
+                    if(mFrameProcessor!=null) {
+                        mProcessingThread = new Thread(mFrameProcessor);
+                        mFrameProcessor.setActive(true);
+                        mProcessingThread.start();
+                    }
 
                     mTextureView = camera2SourceBean.getTextureView();
                     previewSurfaceTexture = camera2SourceBean.getPreviewSurfaceTexture();
@@ -616,8 +699,21 @@ public class Camera2Source implements ICameraAction {
     @Override
     public void stopCameraSource() {
 
-
-//      mCameraOpenCloseLock.acquire();
+        if(mFrameProcessor!=null) {
+            mFrameProcessor.setActive(false);
+            if (mProcessingThread != null) {
+                try {
+                    // Wait for the thread to complete to ensure that we can't have multiple threads
+                    // executing at the same time (i.e., which would happen if we called start too
+                    // quickly after stop).
+                    mProcessingThread.join();
+                } catch (InterruptedException e) {
+                    Log.d(TAG, "Frame processing thread interrupted on release.");
+                }
+                mProcessingThread = null;
+            }
+        }
+//            mCameraOpenCloseLock.acquire();
         if (null != mCaptureSession) {
             mCaptureSession.close();
             mCaptureSession = null;
@@ -694,7 +790,6 @@ public class Camera2Source implements ICameraAction {
         }
     }
 
-
     @Override
     public BestPictureSizeResultBean getBestAspectPictureSizes(PictureInfoBean bean) {
         float targetRatio = ScreenUtil.getScreenRatio(mContext);
@@ -724,8 +819,6 @@ public class Camera2Source implements ICameraAction {
             }
         }
 
-
-
         //If no sizes were supported, (strange situation) establish a higher ratioTolerance
         if(diffs.isEmpty()) {
             for (android.util.Size size : supportedPictureSizes) {
@@ -743,7 +836,6 @@ public class Camera2Source implements ICameraAction {
                 }
             }
         }
-
 
         //Select the highest resolution from the ratio filtered ones.
         for (Map.Entry entry: diffs.entrySet()){
@@ -764,8 +856,8 @@ public class Camera2Source implements ICameraAction {
 
     @Override
     public CameraSourceSizeResultBean getPreviewSizes() {
-            CameraSourceSizeResultBean cameraSourceSizeResultBean = new CameraSourceSizeResultBean();
-            cameraSourceSizeResultBean.setPreviewSizes(mPreviewSize);
+        CameraSourceSizeResultBean cameraSourceSizeResultBean = new CameraSourceSizeResultBean();
+        cameraSourceSizeResultBean.setPreviewSizes(mPreviewSize);
         return cameraSourceSizeResultBean;
     }
 
@@ -783,7 +875,7 @@ public class Camera2Source implements ICameraAction {
             //CHECK CAMERA HARDWARE LEVEL. IF CAMERA2 IS NOT NATIVELY SUPPORTED, GO BACK TO CAMERA1
 
             boolean isSupportCamera2 =false;
-            isSupportCamera2 = isHardwareLevelSupported(characteristics,CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LIMITED);
+            isSupportCamera2 = isHardwareLevelSupported(characteristics,CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY);
 
 
 //            Integer deviceLevel = characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
@@ -797,8 +889,6 @@ public class Camera2Source implements ICameraAction {
             return false;
         }
     }
-
-
 
     /**
      * https://developer.android.com/reference/android/hardware/camera2/CameraCharacteristics.html
@@ -818,7 +908,6 @@ public class Camera2Source implements ICameraAction {
         // deviceLevel is not LEGACY, can use numerical sort
         return requiredLevel <= deviceLevel;
     }
-
 
     /**
      * Opens the camera and starts sending preview frames to the underlying detector.  The supplied
@@ -965,6 +1054,60 @@ public class Camera2Source implements ICameraAction {
 
 
 
+//    private Size getBestAspectPictureSize(android.util.Size[] supportedPictureSizes) {
+//        float targetRatio = ScreenUtil.getScreenRatio(mContext);
+//        Size bestSize = null;
+//        TreeMap<Double, List<android.util.Size>> diffs = new TreeMap<>();
+//
+//        //Select supported sizes which ratio is less than ratioTolerance
+//        for (android.util.Size size : supportedPictureSizes) {
+//            float ratio = (float) size.getWidth() / size.getHeight();
+//            double diff = Math.abs(ratio - targetRatio);
+//            if (diff < ratioTolerance){
+//                if (diffs.keySet().contains(diff)){
+//                    //add the value to the list
+//                    diffs.get(diff).add(size);
+//                } else {
+//                    List<android.util.Size> newList = new ArrayList<>();
+//                    newList.add(size);
+//                    diffs.put(diff, newList);
+//                }
+//            }
+//        }
+//
+//        //If no sizes were supported, (strange situation) establish a higher ratioTolerance
+//        if(diffs.isEmpty()) {
+//            for (android.util.Size size : supportedPictureSizes) {
+//                float ratio = (float)size.getWidth() / size.getHeight();
+//                double diff = Math.abs(ratio - targetRatio);
+//                if (diff < maxRatioTolerance){
+//                    if (diffs.keySet().contains(diff)){
+//                        //add the value to the list
+//                        diffs.get(diff).add(size);
+//                    } else {
+//                        List<android.util.Size> newList = new ArrayList<>();
+//                        newList.add(size);
+//                        diffs.put(diff, newList);
+//                    }
+//                }
+//            }
+//        }
+//
+//        //Select the highest resolution from the ratio filtered ones.
+//        for (Map.Entry entry: diffs.entrySet()){
+//            List<?> entries = (List) entry.getValue();
+//            for (int i=0; i<entries.size(); i++) {
+//                android.util.Size s = (android.util.Size) entries.get(i);
+//                if(bestSize == null) {
+//                    bestSize = new Size(s.getWidth(), s.getHeight());
+//                } else if(bestSize.getWidth() < s.getWidth() || bestSize.getHeight() < s.getHeight()) {
+//                    bestSize = new Size(s.getWidth(), s.getHeight());
+//                }
+//            }
+//        }
+//        return bestSize;
+//    }
+
     /**
      * Given {@code choices} of {@code Size}s supported by a camera, choose the smallest one that
      * is at least as large as the respective texture view size, and that is at most as large as the
@@ -1104,7 +1247,7 @@ public class Camera2Source implements ICameraAction {
             BestPictureSizeResultBean bestPictureSizeResultBean = getBestAspectPictureSizes(pictureInfoBean);
 
             Size camera2Size = bestPictureSizeResultBean.getSizeCamera2();
-            mImageReaderStill = ImageReader.newInstance(streamingResolutionW,streamingResolutionH, ImageFormat.JPEG, /*maxImages*/2);
+            mImageReaderStill = ImageReader.newInstance(camera2Size.getWidth(), camera2Size.getHeight(), ImageFormat.JPEG, /*maxImages*/2);
             mImageReaderStill.setOnImageAvailableListener(mOnImageAvailableListener, mBackgroundHandler);
 
             sensorArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
@@ -1116,23 +1259,23 @@ public class Camera2Source implements ICameraAction {
             // coordinate.
             Integer sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
             if(sensorOrientation != null) {
-            	mSensorOrientation = sensorOrientation;
-            	switch (mDisplayOrientation) {
-            	    case Surface.ROTATION_0:
-            	    case Surface.ROTATION_180:
-            	        if (mSensorOrientation == 90 || mSensorOrientation == 270) {
-            	            swappedDimensions = true;
-            	        }
-            	        break;
-            	    case Surface.ROTATION_90:
-            	    case Surface.ROTATION_270:
-            	        if (mSensorOrientation == 0 || mSensorOrientation == 180) {
-            	            swappedDimensions = true;
-            	        }
-            	        break;
-            	    default:
-            	        Log.e(TAG, "Display rotation is invalid: " + mDisplayOrientation);
-            	}
+                mSensorOrientation = sensorOrientation;
+                switch (mDisplayOrientation) {
+                    case Surface.ROTATION_0:
+                    case Surface.ROTATION_180:
+                        if (mSensorOrientation == 90 || mSensorOrientation == 270) {
+                            swappedDimensions = true;
+                        }
+                        break;
+                    case Surface.ROTATION_90:
+                    case Surface.ROTATION_270:
+                        if (mSensorOrientation == 0 || mSensorOrientation == 180) {
+                            swappedDimensions = true;
+                        }
+                        break;
+                    default:
+                        Log.e(TAG, "Display rotation is invalid: " + mDisplayOrientation);
+                }
             }
 
             Point displaySize = new Point(ScreenUtil.getScreenWidth(mContext), ScreenUtil.getScreenHeight(mContext));
@@ -1302,23 +1445,23 @@ public class Camera2Source implements ICameraAction {
             previewTexture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
             offScreenSurfaceTexture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
 
-//            mImageReaderPreview = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), ImageFormat.YUV_420_888, 1);
-            mImageReaderPreview = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), ImageFormat.YUV_420_888, 1);
+            mImageReaderPreview = ImageReader.newInstance(streamingResolutionW, streamingResolutionH, ImageFormat.YUV_420_888, 2);
+//            mImageReaderPreview = ImageReader.newInstance(largestJpeg.getWidth(), largestJpeg.getHeight(), ImageFormat.YUV_420_888, 1);
             mImageReaderPreview.setOnImageAvailableListener(mOnPreviewAvailableListener, mBackgroundHandler);
 
 
             // This is the output Surface we need to start preview.
             Surface previewSurface = new Surface(previewTexture);
-            Surface offScreenSurface = new Surface(offScreenSurfaceTexture);
+//            Surface offScreenSurface = new Surface(offScreenSurfaceTexture);
 
             // We set up a CaptureRequest.Builder with the output Surface.
             mPreviewRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             mPreviewRequestBuilder.addTarget(previewSurface);
-            mPreviewRequestBuilder.addTarget(offScreenSurface);
+//            mPreviewRequestBuilder.addTarget(offScreenSurface);
             mPreviewRequestBuilder.addTarget(mImageReaderPreview.getSurface());
 
             // Here, we create a CameraCaptureSession for camera preview.
-            mCameraDevice.createCaptureSession(Arrays.asList(previewSurface ,offScreenSurface , mImageReaderPreview.getSurface(), mImageReaderStill.getSurface()), new CameraCaptureSession.StateCallback() {
+            mCameraDevice.createCaptureSession(Arrays.asList(mImageReaderPreview.getSurface(),previewSurface, mImageReaderStill.getSurface()), new CameraCaptureSession.StateCallback() {
                 @Override
                 public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
                     // The camera is already closed
@@ -1345,8 +1488,7 @@ public class Camera2Source implements ICameraAction {
                 }
 
                 @Override
-                public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
-                    Log.d(TAG, "Camera Configuration failed!");}
+                public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {Log.d(TAG, "Camera Configuration failed!");}
             }, mBackgroundHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
@@ -1408,14 +1550,154 @@ public class Camera2Source implements ICameraAction {
                 }
 
                 @Override
-                public void onConfigureFailed(@NonNull CameraCaptureSession session) {
-                    Log.d(TAG, "Camera Configuration failed!");}
+                public void onConfigureFailed(@NonNull CameraCaptureSession session) {Log.d(TAG, "Camera Configuration failed!");}
             }, mainHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
     }
 
+    /**
+     * This runnable controls access to the underlying receiver, calling it to process frames when
+     * available from the camera.  This is designed to run detection on frames as fast as possible
+     * (i.e., without unnecessary context switching or waiting on the next frame).
+     * <p/>
+     * While detection is running on a frame, new frames may be received from the camera.  As these
+     * frames come in, the most recent frame is held onto as pending.  As soon as detection and its
+     * associated processing are done for the previous frame, detection on the mostly recently
+     * received frame will immediately start on the same thread.
+     */
+    private class FrameProcessingRunnable implements Runnable {
+        private Detector<?> mDetector;
+        private long mStartTimeMillis = SystemClock.elapsedRealtime();
+
+        // This lock guards all of the member variables below.
+        private final Object mLock = new Object();
+        private boolean mActive = true;
+
+        // These pending variables hold the state associated with the new frame awaiting processing.
+        private long mPendingTimeMillis;
+        private int mPendingFrameId = 0;
+        private byte[] mPendingFrameData;
+
+        FrameProcessingRunnable(Detector<?> detector) {
+            mDetector = detector;
+        }
+
+        /**
+         * Releases the underlying receiver.  This is only safe to do after the associated thread
+         * has completed, which is managed in camera source's release method above.
+         */
+        @SuppressLint("Assert")
+        void release() {
+            assert (mProcessingThread.getState() == State.TERMINATED);
+            if(mDetector!=null) {
+                mDetector.release();
+                mDetector = null;
+            }
+        }
+
+        /**
+         * Marks the runnable as active/not active.  Signals any blocked threads to continue.
+         */
+        void setActive(boolean active) {
+            synchronized (mLock) {
+                mActive = active;
+                mLock.notifyAll();
+            }
+        }
+
+        /**
+         * Sets the frame data received from the camera.
+         */
+        void setNextFrame(byte[] data) {
+            synchronized (mLock) {
+                if (mPendingFrameData != null) {
+                    mPendingFrameData = null;
+                }
+
+                // Timestamp and frame ID are maintained here, which will give downstream code some
+                // idea of the timing of frames received and when frames were dropped along the way.
+                mPendingTimeMillis = SystemClock.elapsedRealtime() - mStartTimeMillis;
+                mPendingFrameId++;
+                mPendingFrameData = data;
+
+                // Notify the processor thread if it is waiting on the next frame (see below).
+                mLock.notifyAll();
+            }
+        }
+
+        /**
+         * As long as the processing thread is active, this executes detection on frames
+         * continuously.  The next pending frame is either immediately available or hasn't been
+         * received yet.  Once it is available, we transfer the frame info to local variables and
+         * run detection on that frame.  It immediately loops back for the next frame without
+         * pausing.
+         * <p/>
+         * If detection takes longer than the time in between new frames from the camera, this will
+         * mean that this loop will run without ever waiting on a frame, avoiding any context
+         * switching or frame acquisition time latency.
+         * <p/>
+         * If you find that this is using more CPU than you'd like, you should probably decrease the
+         * FPS setting above to allow for some idle time in between frames.
+         */
+        @Override
+        public void run() {
+            Frame outputFrame;
+
+            while (true) {
+                synchronized (mLock) {
+                    while (mActive && (mPendingFrameData == null)) {
+                        try {
+                            // Wait for the next frame to be received from the camera, since we
+                            // don't have it yet.
+                            mLock.wait();
+                        } catch (InterruptedException e) {
+                            Log.d(TAG, "Frame processing loop terminated.", e);
+                            return;
+                        }
+                    }
+
+                    if (!mActive) {
+                        // Exit the loop once this camera source is stopped or released.  We check
+                        // this here, immediately after the wait() above, to handle the case where
+                        // setActive(false) had been called, triggering the termination of this
+                        // loop.
+                        return;
+                    }
+                    QuarterNV21Bean quarterNV21Bean = new QuarterNV21Bean();
+                    quarterNV21Bean.setCamera1Source(null);
+                    quarterNV21Bean.setCamera2Source(mPendingFrameData);
+                    quarterNV21Bean.setImageWidth(mPreviewSize.getWidth());
+                    quarterNV21Bean.setImageHeight(mPreviewSize.getHeight());
+
+
+                    outputFrame = new Frame.Builder()
+                            .setImageData(ByteBuffer.wrap(quarterNV21CameraSource(quarterNV21Bean).getCamera2ResultBean()), mPreviewSize.getWidth()/4, mPreviewSize.getHeight()/4, ImageFormat.NV21)
+//                            .setImageData(ByteBuffer.wrap(mPendingFrameData), mPreviewSize.getWidth(), mPreviewSize.getHeight(), ImageFormat.NV21)
+                            .setId(mPendingFrameId)
+                            .setTimestampMillis(mPendingTimeMillis)
+                            .setRotation(getDetectorOrientation(mSensorOrientation))
+                            .build();
+
+                    // We need to clear mPendingFrameData to ensure that this buffer isn't
+                    // recycled back to the camera before we are done using that data.
+                    mPendingFrameData = null;
+                }
+
+                // The code below needs to run outside of synchronization, because this will allow
+                // the camera to add pending frame(s) while we are running detection on the current
+                // frame.
+                if(mDetector!=null) {
+                    try {
+                        mDetector.receiveFrame(outputFrame);
+                    } catch (Throwable t) {
+                        Log.e(TAG, "Exception thrown from receiver.", t);
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * Retrieves the JPEG orientation from the specified screen rotation.
@@ -1431,6 +1713,22 @@ public class Camera2Source implements ICameraAction {
         return (ORIENTATIONS.get(rotation) + mSensorOrientation + 270) % 360;
     }
 
+    private int getDetectorOrientation(int sensorOrientation) {
+        switch (sensorOrientation) {
+            case 0:
+                return Frame.ROTATION_0;
+            case 90:
+                return Frame.ROTATION_90;
+            case 180:
+                return Frame.ROTATION_180;
+            case 270:
+                return Frame.ROTATION_270;
+            case 360:
+                return Frame.ROTATION_0;
+            default:
+                return Frame.ROTATION_90;
+        }
+    }
 
     byte[] data=null;
     private byte[] convertYUV420888ToNV21Grey(Image imgYUV420) {
@@ -1438,7 +1736,7 @@ public class Camera2Source implements ICameraAction {
 
         ByteBuffer buffer0 = imgYUV420.getPlanes()[0].getBuffer();
         int buffer0_size = (imgYUV420.getHeight())*(imgYUV420.getWidth());
-        Log.d(TAG," buffer0 SIZE : "+buffer0_size);
+//        Log.d(TAG," buffer0 SIZE : "+buffer0_size);
 
         if(data==null)
             data = new byte[buffer0_size ];
