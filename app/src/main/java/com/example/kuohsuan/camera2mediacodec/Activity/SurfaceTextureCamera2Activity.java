@@ -629,6 +629,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         super.onStart();
         Log.d(TAG, "AAA_onStart");
         setFullScreenSticky();
+        viewStateUtil.setRunningStateProcess(true);
     }
 
     @Override
@@ -642,7 +643,6 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
     @Override
     protected void onResume() {
         super.onResume();
-        //// TODO: 2018/1/29 當Setting按下結束連線回來時,要做onActivityResult偷連或是不要讓他跑codec之類的東東會死
         Log.d(TAG, "AAA_onResume");
         if (orientationListener != null && orientationListener.canDetectOrientation()) {
             orientationListener.enable();
