@@ -9,8 +9,6 @@
 
 ### Gradle dependency
 ````````
-put these in gradle
-
 //zbar
     compile 'com.yanzhenjie.zbar:zbar:1.0.0'
     compile 'com.yanzhenjie.zbar:camera:1.0.0'
@@ -24,7 +22,6 @@ put these in gradle
 
 Usage
 -------
-
 *camera2
 `````
 first: init camera2
@@ -42,15 +39,12 @@ second: startCamera when surfaceTexture is available or onSet
   
 ``````
 
-
-
 *zbar detect resolution set
 ````
 can set resoluition to zbar library
 if your device support 1920*1080 .  e.g STREAMING_RESOLUTION = 1920
 
 `````
-
 
 *zbar
   *Add interface callback code
@@ -68,7 +62,6 @@ if your device support 1920*1080 .  e.g STREAMING_RESOLUTION = 1920
  3. register EventBus for zbar result 
   
 `````
-  
 `````
 //init zbarProcessorRunnable
   if(zbarProcessorRunnable == null && imageWidth >0 && imageHeight >0 ){
@@ -85,8 +78,6 @@ if your device support 1920*1080 .  e.g STREAMING_RESOLUTION = 1920
        zbarProcessorRunnable.setNextFrame(data);
    }  
 `````
-
-
 Preview 
 -----
 ￼￼￼![alt text](https://serving.photos.photobox.com/314167626a7d55376ab63d583d9df972d8aa18ff8601dd85abc2f4b2b5e02e352335433c.jpg)
