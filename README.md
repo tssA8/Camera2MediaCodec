@@ -8,9 +8,10 @@
 ```
 usage
 -------
-
 *gradle
 ````````
+put these in gradle
+
 //zbar
     compile 'com.yanzhenjie.zbar:zbar:1.0.0'
     compile 'com.yanzhenjie.zbar:camera:1.0.0'
@@ -19,6 +20,7 @@ usage
     compile 'com.github.ChillingVan:android-openGL-canvas:v1.2.2.3'
 //event bus 
   compile 'org.greenrobot:eventbus:3.1.1'
+  
 ````````
 *camera2
 `````
