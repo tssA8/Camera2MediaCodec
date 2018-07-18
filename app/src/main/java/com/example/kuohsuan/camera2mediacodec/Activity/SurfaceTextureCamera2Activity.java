@@ -24,9 +24,6 @@ import android.media.MediaMuxer;
 import android.media.MediaRecorder;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.os.Message;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.text.TextUtils;
@@ -54,6 +51,7 @@ import com.example.kuohsuan.camera2mediacodec.ZbarProcessorRunnable;
 import com.example.kuohsuan.camera2mediacodec.bean.StartCameraSourceBean;
 import com.example.kuohsuan.camera2mediacodec.bean.ZBarCodeBean;
 import com.example.kuohsuan.camera2mediacodec.cameraSource.Camera2Source;
+import com.example.kuohsuan.camera2mediacodec.myeventbus.ZbarResultEventBus;
 import com.example.kuohsuan.camera2mediacodec.stream.MuxerManagement;
 import com.example.kuohsuan.camera2mediacodec.stream.encoder.MyAudioEncoder;
 import com.example.kuohsuan.camera2mediacodec.stream.encoder.MyBaseEncoder;
@@ -64,8 +62,9 @@ import com.example.kuohsuan.camera2mediacodec.util.ImageUtil;
 import com.example.kuohsuan.camera2mediacodec.util.ScreenUtil;
 import com.example.kuohsuan.camera2mediacodec.util.ViewStateUtil;
 import com.example.kuohsuan.camera2mediacodec.util.ZbarQueue;
-import com.yanzhenjie.zbar.camera.ScanCallback;
 
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -115,11 +114,10 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
     private String cameraId;
 
     //zBar handler
-    private Handler zbarHandler;
-    private ScanCallback zbarCallback;
+//    private ScanCallback zbarCallback;
+    private ZbarProcessorRunnable zbarProcessorRunnable;
     //activity state !!!
     private ViewStateUtil viewStateUtil = ViewStateUtil.getInstance();
-
 
 
     /**
@@ -146,14 +144,13 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         Log.d(TAG, "AAA_onCreate");
 
         createFileFolder();
+
         ///在這裡才可以正式開啟camera
         initCamera();
 
         findView();
 
         setListener();
-
-        initZbarScanner();
 
         getViewSize(STREAMING_RESOLUTION,OFFSCREEN_RESOLUTION);
 
@@ -165,14 +162,8 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 
         setMuxerSavePath();
 
-        setZabrScanCallback(new ScanCallback() {
-            @Override
-            public void onScanResult(String qrCodeResult) {
 
-                Log.d(TAG, "A___onScanResult");
-                setZbarResult(qrCodeResult);
-            }
-        });
+
 
     }
 
@@ -429,34 +420,32 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         return cameraId;
     }
 
-    private com.yanzhenjie.zbar.Image barcode ;
-    private ZbarProcessorRunnable zbarProcessorRunnable;
-    @Override
-    public void getYuv(byte[] data,int imageWidth, int imageHeight) {
-        if(barcode==null ){
-            barcode = new com.yanzhenjie.zbar.Image(imageWidth, imageHeight, "Y800");
+    @Subscribe
+    public void ZbarResultEventBus(ZbarResultEventBus event){
+        if(event!=null) {
+            String result  = event.getResultData();
+            Log.d(TAG,"Zbar Event bus event : "+result+" thread id : "+Thread.currentThread().getId());
+            setZbarResult(result);
         }
 
-        //new
-        if(zbarProcessorRunnable==null && imageWidth >0 && imageHeight>0){
-            //init Runnable
+    }
+
+    @Override
+    public void getYuv(byte[] data,int imageWidth, int imageHeight) {
+
+
+        if(zbarProcessorRunnable == null && imageWidth >0 && imageHeight >0 ){
             zbarProcessorRunnable = new ZbarProcessorRunnable(
-                    zbarHandler
-                    ,imageWidth
+                    imageWidth
                     ,imageHeight
                     ,previewSize.getWidth()
                     , previewSize.getHeight()
-                    ,barcode);
-            //start Runnable
-            zbarProcessorRunnable.start();
-
-            Log.d(TAG,"AAA_zbarProcessorRunnable  " +
-                    "previewSize.getWidth() :  " +previewSize.getWidth()+
-                    " previewSize.getHeight() : "+previewSize.getHeight());
+            );
         }
 
-        if(zbarProcessorRunnable!=null)
-            zbarProcessorRunnable.setNextFrame(data);//set Frame
+        if(zbarProcessorRunnable!=null) {
+            zbarProcessorRunnable.setNextFrame(data);
+        }
 
     }
 
@@ -502,8 +491,17 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
                             int zbarImageW = list.get(i).getImageReaderCreateWeight();
                             Bitmap bitmap = list.get(i).getTextBitmap();
 
-                            setBarCodeDataInMemory(scanStr,bound1,bound2,bound3,bound4,zbarImageH
-                                    ,zbarImageW,bitmap,resultBean,cloneZBarcodeBeanArrayList);
+                            setBarCodeDataInMemory(
+                                    scanStr,
+                                    bound1,
+                                    bound2,
+                                    bound3,
+                                    bound4,
+                                    zbarImageH,
+                                    zbarImageW,
+                                    bitmap,
+                                    resultBean,
+                                    cloneZBarcodeBeanArrayList);
                         }
 
                     }else{
@@ -523,10 +521,19 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
                             Log.d("onScanResult","result : "+scanStr );
 
 //                          //Create Bitmap
-                            Bitmap textZBitmap = ImageUtil.drawText(scanStr , 300 , 50 , Color.TRANSPARENT);
+                            Bitmap bitmap = ImageUtil.drawText(scanStr , 300 , 50 , Color.TRANSPARENT);
                             //save data in memory
-                            setBarCodeDataInMemory(scanStr,bound1,bound2,bound3,bound4,zbarImageH
-                                    ,zbarImageW,textZBitmap,resultBean,cloneZBarcodeBeanArrayList);
+                            setBarCodeDataInMemory(
+                                    scanStr,
+                                    bound1,
+                                    bound2,
+                                    bound3,
+                                    bound4,
+                                    zbarImageH,
+                                    zbarImageW,
+                                    bitmap,
+                                    resultBean,
+                                    cloneZBarcodeBeanArrayList);
                         }
                     }
 
@@ -583,7 +590,6 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         ZbarQueue zbarQueue = ZbarQueue.getInstance();
         zbarQueue.addQueue(barcodeBean);
 
-
         MyGlRenderFilter.setBarIdList(barId);
         thisTimeList.add(scanStr);
 //      Log.d(TAG,"A____ZZZ_ZBAR bound1");
@@ -630,6 +636,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         Log.d(TAG, "AAA_onStart");
         setFullScreenSticky();
         viewStateUtil.setRunningStateProcess(true);
+        EventBus.getDefault().register(this);
     }
 
     @Override
@@ -637,6 +644,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         super.onStop();
         Log.d(TAG, "AAA_onStop");
         viewStateUtil.setRunningStateProcess(false);
+        EventBus.getDefault().unregister(this);
 
     }
 
@@ -1140,25 +1148,6 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
                             | View.SYSTEM_UI_FLAG_FULLSCREEN
                             | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         }
-    }
-
-
-    private void initZbarScanner(){
-        zbarHandler = new Handler(Looper.getMainLooper()) {
-            @Override
-            public void handleMessage(Message msg) {
-                if (zbarCallback != null){
-                    zbarCallback.onScanResult((String) msg.obj);
-                }
-            }
-        };
-    }
-
-
-
-
-    private void setZabrScanCallback(ScanCallback callback) {
-        this.zbarCallback = callback;
     }
 
     //abstract factory
