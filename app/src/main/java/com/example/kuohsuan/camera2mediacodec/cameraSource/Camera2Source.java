@@ -105,7 +105,7 @@ public class Camera2Source implements ICameraAction {
     private static final String TAG = "Camera2Source";
     private static final double ratioTolerance = 0.1;
     private static final double maxRatioTolerance = 0.18;
-    private Context mContext;
+    private Context context;
     private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
     private static final SparseIntArray INVERSE_ORIENTATIONS = new SparseIntArray();
     private boolean cameraStarted = false;
@@ -216,8 +216,10 @@ public class Camera2Source implements ICameraAction {
     private CameraPreviewTextureView mTextureView;
     private SurfaceTexture previewSurfaceTexture;
     private SurfaceTexture offScreenSurfaceTexture;
-    private int streamingResolutionH;
-    private int streamingResolutionW;
+    private int imageReaderH;
+    private int imageReaderW;
+    private int offscreenStreamingH;
+    private int offscreenStreamingW;
 
     private ShutterCallback mShutterCallback;
 
@@ -450,7 +452,7 @@ public class Camera2Source implements ICameraAction {
             }
 
             mDetector = detector;
-            mCameraSource.mContext = context;
+            mCameraSource.context = context;
         }
         public Builder(Context context) {
             if (context == null) {
@@ -458,7 +460,7 @@ public class Camera2Source implements ICameraAction {
             }
 
             mDetector = null;
-            mCameraSource.mContext = context;
+            mCameraSource.context = context;
         }
         public Builder setFocusMode(int mode) {
             mCameraSource.mFocusMode = mode;
@@ -488,7 +490,7 @@ public class Camera2Source implements ICameraAction {
         }
 
         public Builder setYuvCallBack(){
-            mCameraSource.mIYuvDataCallback = (IYuvDataCallback)mCameraSource.mContext;
+            mCameraSource.mIYuvDataCallback = (IYuvDataCallback)mCameraSource.context;
             return this;
         }
 
@@ -667,7 +669,7 @@ public class Camera2Source implements ICameraAction {
             if(camera2SourceBean!=null){
 
                 mDisplayOrientation = camera2SourceBean.getDisplayOrientation();
-                if(ContextCompat.checkSelfPermission(mContext, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                if(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
                     if (cameraStarted) {
 //                return this;
                         Log.d(TAG,"startCameraSource cameraStarted");
@@ -684,8 +686,10 @@ public class Camera2Source implements ICameraAction {
                     mTextureView = camera2SourceBean.getTextureView();
                     previewSurfaceTexture = camera2SourceBean.getPreviewSurfaceTexture();
                     offScreenSurfaceTexture = camera2SourceBean.get_offScreenSurfaceTexture();
-                    streamingResolutionH = camera2SourceBean.getStreamingResolutionH();
-                    streamingResolutionW = camera2SourceBean.getStreamingResolutionW();
+                    imageReaderH = camera2SourceBean.getImageReaderH();
+                    imageReaderW = camera2SourceBean.getImageReaderW();
+                    offscreenStreamingH = camera2SourceBean.getOffScreenResolutionH();
+                    offscreenStreamingW = camera2SourceBean.getOffscreenResolutionW();
                     if (mTextureView.isAvailable()) {
                         setUpCameraOutputs(mTextureView.getWidth(), mTextureView.getHeight());
                     }
@@ -792,7 +796,7 @@ public class Camera2Source implements ICameraAction {
 
     @Override
     public BestPictureSizeResultBean getBestAspectPictureSizes(PictureInfoBean bean) {
-        float targetRatio = ScreenUtil.getScreenRatio(mContext);
+        float targetRatio = ScreenUtil.getScreenRatio(context);
         BestPictureSizeResultBean bestPictureSizeResultBean = new BestPictureSizeResultBean();
         Size bestSize = null;
         TreeMap<Double, List<android.util.Size>> diffs = new TreeMap<>();
@@ -868,14 +872,14 @@ public class Camera2Source implements ICameraAction {
 
     public boolean isCamera2Native() {
         try {
-            if (ContextCompat.checkSelfPermission(mContext, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {return false;}
-            manager = (CameraManager) mContext.getSystemService(Context.CAMERA_SERVICE);
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {return false;}
+            manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
             mCameraId = manager.getCameraIdList()[mFacing];
             CameraCharacteristics characteristics = manager.getCameraCharacteristics(mCameraId);
             //CHECK CAMERA HARDWARE LEVEL. IF CAMERA2 IS NOT NATIVELY SUPPORTED, GO BACK TO CAMERA1
 
             boolean isSupportCamera2 =false;
-            isSupportCamera2 = isHardwareLevelSupported(characteristics,CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY);
+            isSupportCamera2 = isHardwareLevelSupported(characteristics,CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LIMITED);
 
 
 //            Integer deviceLevel = characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
@@ -920,7 +924,7 @@ public class Camera2Source implements ICameraAction {
 //    @RequiresPermission(Manifest.permission.CAMERA)
 //    public Camera2Source start(@NonNull CameraPreviewTextureView textureView, @NonNull SurfaceTexture surfaceTexture ,SurfaceTexture _offScreenSurfaceTexture,int displayOrientation) throws IOException {
 ////        mDisplayOrientation = displayOrientation;
-////        if(ContextCompat.checkSelfPermission(mContext, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+////        if(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
 ////            if (cameraStarted) {
 ////                return this;
 ////            }
@@ -1055,7 +1059,7 @@ public class Camera2Source implements ICameraAction {
 
 
 //    private Size getBestAspectPictureSize(android.util.Size[] supportedPictureSizes) {
-//        float targetRatio = ScreenUtil.getScreenRatio(mContext);
+//        float targetRatio = ScreenUtil.getScreenRatio(context);
 //        Size bestSize = null;
 //        TreeMap<Double, List<android.util.Size>> diffs = new TreeMap<>();
 //
@@ -1228,11 +1232,11 @@ public class Camera2Source implements ICameraAction {
      */
     private void setUpCameraOutputs(int width, int height) {
         try {
-            if (ContextCompat.checkSelfPermission(mContext, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {return;}
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {return;}
 //            if (!mCameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
 //                throw new RuntimeException("Time out waiting to lock camera opening.");
 //            }
-            if(manager == null) manager = (CameraManager) mContext.getSystemService(Context.CAMERA_SERVICE);
+            if(manager == null) manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
             mCameraId = manager.getCameraIdList()[mFacing];
             CameraCharacteristics characteristics = manager.getCameraCharacteristics(mCameraId);
             StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
@@ -1278,7 +1282,7 @@ public class Camera2Source implements ICameraAction {
                 }
             }
 
-            Point displaySize = new Point(ScreenUtil.getScreenWidth(mContext), ScreenUtil.getScreenHeight(mContext));
+            Point displaySize = new Point(ScreenUtil.getScreenWidth(context), ScreenUtil.getScreenHeight(context));
             int rotatedPreviewWidth = width;
             int rotatedPreviewHeight = height;
             int maxPreviewWidth = displaySize.x;
@@ -1443,9 +1447,8 @@ public class Camera2Source implements ICameraAction {
             assert offscreenTexture != null;
             // We configure the size of default buffer to be the size of camera preview we want.
             previewTexture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
-            offScreenSurfaceTexture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
-
-            mImageReaderPreview = ImageReader.newInstance(streamingResolutionW, streamingResolutionH, ImageFormat.YUV_420_888, 2);
+            offScreenSurfaceTexture.setDefaultBufferSize(offscreenStreamingW, offscreenStreamingH);
+            mImageReaderPreview = ImageReader.newInstance(imageReaderW, imageReaderH, ImageFormat.YUV_420_888, 2);
 //            mImageReaderPreview = ImageReader.newInstance(largestJpeg.getWidth(), largestJpeg.getHeight(), ImageFormat.YUV_420_888, 1);
             mImageReaderPreview.setOnImageAvailableListener(mOnPreviewAvailableListener, mBackgroundHandler);
 

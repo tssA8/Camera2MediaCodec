@@ -29,6 +29,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
+import android.text.TextUtils;
 import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
@@ -41,8 +42,6 @@ import com.chillingvan.canvasgl.glcanvas.RawTexture;
 import com.chillingvan.canvasgl.glview.texture.GLSurfaceTextureProducerView;
 import com.chillingvan.canvasgl.glview.texture.gles.EglContextWrapper;
 import com.chillingvan.canvasgl.glview.texture.gles.GLThread;
-import com.chillingvan.canvasgl.textureFilter.HueFilter;
-import com.chillingvan.canvasgl.textureFilter.TextureFilter;
 import com.example.kuohsuan.camera2mediacodec.Constant;
 import com.example.kuohsuan.camera2mediacodec.Interface.ICameraAction;
 import com.example.kuohsuan.camera2mediacodec.Interface.IYuvDataCallback;
@@ -59,6 +58,7 @@ import com.example.kuohsuan.camera2mediacodec.stream.MuxerManagement;
 import com.example.kuohsuan.camera2mediacodec.stream.encoder.MyAudioEncoder;
 import com.example.kuohsuan.camera2mediacodec.stream.encoder.MyBaseEncoder;
 import com.example.kuohsuan.camera2mediacodec.stream.encoder.MyVideoEncoder;
+import com.example.kuohsuan.camera2mediacodec.util.Camera2Util;
 import com.example.kuohsuan.camera2mediacodec.util.FileUtils;
 import com.example.kuohsuan.camera2mediacodec.util.ImageUtil;
 import com.example.kuohsuan.camera2mediacodec.util.ScreenUtil;
@@ -70,14 +70,11 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.BufferedOutputStream;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 
 
@@ -87,56 +84,43 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
     private final boolean IS_EXECUTE_RECORD = false;
     private final boolean DEBUG = false;
     private static final int START_FOR_RESULT = 1;
-
-    /**
-     * Max preview width that is guaranteed by Camera2 API
-     */
     private static final int MAX_PREVIEW_WIDTH = 1920;
-    /**
-     * Max preview height that is guaranteed by Camera2 API
-     */
     private static final int MAX_PREVIEW_HEIGHT = 1080;
-
+    private static  final int STREAMING_RESOLUTION = 1920;
+    private static final int OFFSCREEN_RESOLUTION = 1920;//offscreen
     private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
     private final String OUTPUT_DIR = "/sdcard/temp/videorecord/";
 
-    //view
-    private BufferedOutputStream videoStreamOutput;
-    private Size stream1Size, stream2Size;
-    //    private AutoFitTextureView txv_cameraPreview;
-    private MyVideoEncoder myVideoEncoderStream1, myVideoEncoderStream2;
-    private MyAudioEncoder myAudioEncoder;
-    private AudioRecord audioRecord;
-
+    //decode encode
     private CameraPreviewTextureView txv_cameraPreviewWithFilter;
     private SurfaceTexture previewSurfaceTexture;
     private RawTexture previewRawTexture;
+    private SurfaceTexture offScreenSurfaceTexture;
+    private Size imageReaderSize, streamOffScreenSize,previewSize;
     private EglContextWrapper previewEglCtx;
-
-    private Map<TextureView, Boolean> displayViewInitStatusMap = new HashMap<>(); // value: 是否已經被create
     private OrientationEventListener orientationListener;
     private EncoderCanvas offScreenCanvasWithFilter;
-    private SurfaceTexture offScreenSurfaceTexture;
     private RawTexture offScreenRawTexture;
-    private Size previewSize;
+    private MyVideoEncoder myVideoEncoderStream1;
+    private MyAudioEncoder myAudioEncoder;
+    private AudioRecord audioRecord;
+
+    // camera
+    private CameraCharacteristics cameraCharacteristics;
+    private CameraManager cameraManager;
+    private Camera2Source camera2Source = null;
+    private ICameraAction cameraAction;
+    private boolean isUsingFrontCamera = false;
+    private boolean isUseCamera2 = true;
     private String cameraId;
 
-    // DEFAULT CAMERA BEING OPENED
-    private boolean usingFrontCamera = false;
-    // MUST BE CAREFUL USING THIS VARIABLE.
-    // ANY ATTEMPT TO START CAMERA2 ON API < 21 WILL CRASH.
-    private boolean useCamera2 = true;
-    private Camera2Source mCamera2Source = null;
-    private ICameraAction mCameraDelegate;
-    //zBar
-    private Handler mZabrHandler;
-    private ScanCallback mZbarCallback;
-
+    //zBar handler
+    private Handler zbarHandler;
+    private ScanCallback zbarCallback;
     //activity state !!!
     private ViewStateUtil viewStateUtil = ViewStateUtil.getInstance();
 
-    //streaming resolution
-    private static  final int STREAMING_RESOLUTION = 1920;
+
 
     /**
      * The {@link android.util.Size} of camera preview.
@@ -152,102 +136,153 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+
         super.onCreate(savedInstanceState);
+
+        long startRecordTime = System.nanoTime();
+
         setContentView(R.layout.activity_surface_texture_camera2);
+
         Log.d(TAG, "AAA_onCreate");
-        FileUtils.mkDirs(OUTPUT_DIR);//create folder
-        FileUtils.delAllFile(OUTPUT_DIR);
-        initViewEncoder(STREAMING_RESOLUTION);
+
+        createFileFolder();
         ///在這裡才可以正式開啟camera
         initCamera();
+
         findView();
+
         setListener();
+
         initZbarScanner();
+
+        getViewSize(STREAMING_RESOLUTION,OFFSCREEN_RESOLUTION);
+
+        initVideoEncoder(startRecordTime);
+
+        initAudioEncoder(startRecordTime);
+
+        setGlRenderBitmap();
+
+        setMuxerSavePath();
+
         setZabrScanCallback(new ScanCallback() {
             @Override
             public void onScanResult(String qrCodeResult) {
 
-                Log.d(TAG,"A___onScanResult");
-
-//                Log.d(TAG,"ZBAR onScanResult : "+content+" Thread id : "+Thread.currentThread().getId());
+                Log.d(TAG, "A___onScanResult");
                 setZbarResult(qrCodeResult);
             }
         });
 
     }
 
+    private void createFileFolder(){
+
+        FileUtils.mkDirs(Constant.SDCARD_FILE_PATH_OUTPUT_DIR);
+
+        FileUtils.delAllFile(Constant.SDCARD_FILE_PATH_OUTPUT_DIR);
+    }
+
     private void initCamera(){
         //////////Abstract Factory //只需要知道要請求什麼物件,就可以直接使用;無須擔心實作方法.
-        if(usingFrontCamera){
+        if (isUsingFrontCamera) {
             FrontCamera frontCamera = new FrontCamera();
             frontCamera.buildCamera2();// frontCamera.buildCamera1();
 
-        }else{
+        } else {
             BackCamera backCamera = new BackCamera();
             backCamera.buildCamera2();// backCamera.buildCamera1();
         }
 
     }
 
-    private void initViewEncoder(int resolution) {
-        long startRecordWhenNs = System.nanoTime();
-        CameraManager cameraManager = (CameraManager) getSystemService(CAMERA_SERVICE);
+    private CameraCharacteristics getCharacteristics(CameraManager cameraManager){
 
-        try {
-            String[] cameraIdList = cameraManager.getCameraIdList();
-            cameraId = cameraIdList[0];
-            //獲取可用相機設備列表
-            CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraId);
-            StreamConfigurationMap map = characteristics
-                    .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-//            Size[] mediaRecorderSize = map.getOutputSizes(MediaRecorder.class);
-            Size[] surfaceTextureSize = map.getOutputSizes(SurfaceTexture.class);
-            int findIndex = 0;
-            for (Size size : surfaceTextureSize) {
-                if (size.getWidth() <= resolution) {
-                    break;
-                }
-                findIndex++;
+        if ( cameraCharacteristics == null ) {
+
+            try {
+
+                String cameraId = getCameraId(cameraManager);
+
+                cameraCharacteristics = cameraManager.getCameraCharacteristics(cameraId);
+
+                Camera2Util.setCameraCharacteristics(cameraCharacteristics);
+
+            } catch (CameraAccessException e) {
+                e.printStackTrace();
             }
-            stream1Size = surfaceTextureSize[findIndex];
-            stream1Size = new Size(stream1Size.getHeight(), stream1Size.getWidth());
-            // stream1Size = new Size(1440,1920);
-            stream2Size = surfaceTextureSize[surfaceTextureSize.length - 1];
-            int stream1BitRate = 5 * 1000 * 1000;
-//            int stream2BitRate = (int) (0.1 * 1000 * 1000);
-            myVideoEncoderStream1 = new MyVideoEncoder(startRecordWhenNs);
-            myVideoEncoderStream1.prepareVideoEncoder(stream1Size.getWidth(), stream1Size.getHeight(), stream1BitRate, "camera2mediacodec0.264", true);
-            myVideoEncoderStream1.setMyEncoderCallBackFunction(myEncoderCallBackFunction);
 
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        try {
-            audioRecord = setupAudioRecord();
-            startAudioRecord(audioRecord);//開始錄音
-            //啟動decoder
-            myAudioEncoder = new MyAudioEncoder(startRecordWhenNs);
-            myAudioEncoder.prepareAudioEncoder(audioRecord, AUDIO_SAMPLES_PER_FRAME);
-            myAudioEncoder.startCodec();
-            myAudioEncoder.setMyEncoderCallBackFunction(myEncoderCallBackFunction);
-        } catch (Exception e) {
-            e.printStackTrace();
         }
 
-        //
-        if (IS_EXECUTE_RECORD) {
-            MuxerManagement myMuxerManagement = MuxerManagement.getInstance();
-            myMuxerManagement.initMuxerInfo(OUTPUT_DIR, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+        return cameraCharacteristics;
+
+    }
+
+
+    private void getViewSize(int streamingResolution,int offscreenResolution){
+
+        CameraManager cameraManager = getCameraManager();
+
+        cameraId = getCameraId(cameraManager);
+
+        //獲取可用相機設備列表
+        CameraCharacteristics characteristics = getCharacteristics(cameraManager);
+
+        StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+
+        Size[] surfaceTextureSize = map.getOutputSizes(ImageFormat.JPEG);
+
+        int findIndex = 0;
+
+        //find ImageReader Resolution
+        for (Size size : surfaceTextureSize) {
+            if (size.getWidth() <= streamingResolution) {
+                break;
+            }
+            findIndex++;
         }
+
+        Size size1 = surfaceTextureSize[findIndex];
+
+        imageReaderSize = new Size(size1.getHeight(), size1.getWidth());
+
+        //offscreen Resolution
+        Size[] offScreenSize = map.getOutputSizes(SurfaceTexture.class);
+
+        int findIndex2 = 0;
+
+        //find streaming resolution
+        for (Size size : offScreenSize) {
+            if (size.getWidth() <= offscreenResolution) {
+                break;
+            }
+            findIndex2++;
+        }
+
+        Size size2 = offScreenSize[findIndex2];
+
+        streamOffScreenSize = new Size(size2.getHeight(),size2.getWidth());
+
+    }
+
+
+    private void setGlRenderBitmap(){
 
         //設定MyGlRenderFilter
         Bitmap bitmap = BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher);
         MyGlRenderFilter.setLogoBitmap(bitmap);
-        TextureFilter textureFilter = new HueFilter(180);
-        MyGlRenderFilter.setTextureFilter(textureFilter);
+    }
 
+
+    private void setMuxerSavePath(){
+
+        if (IS_EXECUTE_RECORD) {
+
+            MuxerManagement myMuxerManagement = MuxerManagement.getInstance();
+
+            myMuxerManagement.initMuxerInfo(Constant.SDCARD_FILE_PATH_OUTPUT_DIR, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+
+        }
     }
 
     private void findView() {
@@ -301,52 +336,99 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
                     }
                 });
 
+
                 configureTransform(txv_cameraPreviewWithFilter, txv_cameraPreviewWithFilter.getWidth(), txv_cameraPreviewWithFilter.getHeight());
 
-                Log.d(TAG,"txv_cameraPreviewWithFilter.getWidth() : "+txv_cameraPreviewWithFilter.getWidth()
-                        +" getHeight() : "+txv_cameraPreviewWithFilter.getHeight()  );
+                if (isUseCamera2) {
 
-                boolean isRunningFrontProcess = viewStateUtil.isRunningAppProcess();
-                startCameraSource();
+                    offScreenCanvasWithFilter = new EncoderCanvas(myVideoEncoderStream1.getMyMediaCodecWrapper().width, myVideoEncoderStream1.getMyMediaCodecWrapper().height, myVideoEncoderStream1.getMyMediaCodecWrapper().encoderSurface);
 
+                } else {
 
-            }
-        });
+                    offScreenCanvasWithFilter = new EncoderCanvas(myVideoEncoderStream1.getMyMediaCodecWrapper().width, myVideoEncoderStream1.getMyMediaCodecWrapper().height, previewEglCtx, myVideoEncoderStream1.getMyMediaCodecWrapper().encoderSurface);
 
-        if (useCamera2) {
-            offScreenCanvasWithFilter = new EncoderCanvas(myVideoEncoderStream1.getMyMediaCodecWrapper().width, myVideoEncoderStream1.getMyMediaCodecWrapper().height, myVideoEncoderStream1.getMyMediaCodecWrapper().encoderSurface);
-        } else {
-            offScreenCanvasWithFilter = new EncoderCanvas(myVideoEncoderStream1.getMyMediaCodecWrapper().width, myVideoEncoderStream1.getMyMediaCodecWrapper().height, previewEglCtx, myVideoEncoderStream1.getMyMediaCodecWrapper().encoderSurface);
-            offScreenCanvasWithFilter.setSharedTexture(previewRawTexture, previewSurfaceTexture);
-        }
-        offScreenCanvasWithFilter.setOnCreateGLContextListener(new GLThread.OnCreateGLContextListener() {
-            @Override
-            public void onCreate(EglContextWrapper eglContext) {
-                Log.d(TAG, "aaa_offScreenCanvas_oncreate");
-            }
-        });
-        offScreenCanvasWithFilter.setOnSurfaceTextureSet(new GLSurfaceTextureProducerView.OnSurfaceTextureSet() {
-            @Override
-            public void onSet(SurfaceTexture surfaceTexture, RawTexture surfaceTextureRelatedTexture) {
-                Log.d(TAG, "aaa_offScreenCanvas_onSet");
-                offScreenSurfaceTexture = surfaceTexture;
-                offScreenRawTexture = surfaceTextureRelatedTexture;
-                surfaceTexture.setOnFrameAvailableListener(new SurfaceTexture.OnFrameAvailableListener() {
+                    offScreenCanvasWithFilter.setSharedTexture(previewRawTexture, previewSurfaceTexture);
+
+                }
+
+                offScreenCanvasWithFilter.setOnCreateGLContextListener(new GLThread.OnCreateGLContextListener() {
+
                     @Override
-                    public void onFrameAvailable(SurfaceTexture surfaceTexture) {
-                        offScreenCanvasWithFilter.requestRenderAndWait();
+                    public void onCreate(EglContextWrapper eglContext) {
+
+                        Log.d(TAG, "aaa_offScreenCanvas_oncreate");
+                        previewEglCtx = eglContext;
                     }
                 });
 
+                offScreenCanvasWithFilter.setOnSurfaceTextureSet(new GLSurfaceTextureProducerView.OnSurfaceTextureSet() {
+
+                    @Override
+                    public void onSet(SurfaceTexture surfaceTexture, RawTexture surfaceTextureRelatedTexture) {
+
+                        Log.d(TAG, "aaa_offScreenCanvas_onSet");
+
+                        offScreenSurfaceTexture = surfaceTexture;
+                        offScreenRawTexture = surfaceTextureRelatedTexture;
+
+                        surfaceTexture.setOnFrameAvailableListener(new SurfaceTexture.OnFrameAvailableListener() {
+                            @Override
+                            public void onFrameAvailable(SurfaceTexture surfaceTexture) {
+
+                                offScreenCanvasWithFilter.requestRenderAndWait();
+
+                            }
+                        });
+
+                        startCameraSource();
+
+                    }
+                });
+
+                offScreenCanvasWithFilter.start();
+                offScreenCanvasWithFilter.onResume();
             }
         });
 
-        offScreenCanvasWithFilter.start();
-        offScreenCanvasWithFilter.onResume();
 
 
 
     }
+
+    private CameraManager getCameraManager(){
+
+        if(cameraManager==null) {
+
+            cameraManager = (CameraManager) getSystemService(CAMERA_SERVICE);
+            Camera2Util.setCameraManager(cameraManager);
+        }
+
+        return cameraManager;
+    }
+
+
+    private String getCameraId(CameraManager cameraManager){
+
+
+        if( TextUtils.isEmpty(cameraId) ) {
+
+            try {
+
+                String[] cameraIdList = cameraManager.getCameraIdList();
+
+                cameraId = cameraIdList[0];
+
+                Camera2Util.setCameraId(cameraId);
+
+            } catch (CameraAccessException e) {
+                e.printStackTrace();
+            }
+
+        }
+
+        return cameraId;
+    }
+
     private com.yanzhenjie.zbar.Image barcode ;
     private ZbarProcessorRunnable zbarProcessorRunnable;
     @Override
@@ -359,7 +441,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         if(zbarProcessorRunnable==null && imageWidth >0 && imageHeight>0){
             //init Runnable
             zbarProcessorRunnable = new ZbarProcessorRunnable(
-                    mZabrHandler
+                    zbarHandler
                     ,imageWidth
                     ,imageHeight
                     ,previewSize.getWidth()
@@ -386,11 +468,11 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 
                 // TODO Auto-generated method stub
                 try {
-                    ArrayList<String> thisTimeList = new ArrayList<>();
+                    ArrayList<String> resultBean = new ArrayList<>();
                     JSONArray jsonArray = new JSONArray(result);
 
                     //last time zbar result
-                    ArrayList<String> lastResultBeanList = getLastTimeZbarResultList();
+                    ArrayList<String> lastResultBean = getLastTimeZbarResultList();
                     ArrayList<ZBarCodeBean> cloneZBarcodeBeanArrayList = new ArrayList<>();
 
                     //1 get result list
@@ -398,12 +480,12 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
                         JSONObject scanResultJSONObject = jsonArray.getJSONObject(i);
                         String scanStr = scanResultJSONObject.getString(Constant.ZBAR_BARCODE_SCAN_RESULT);
                         Log.d("onScanResult","result : "+scanStr );
-                        thisTimeList.add(scanStr);
+                        resultBean.add(scanStr);
 
                     }
-                    setLastTimeZbarList(thisTimeList);
+                    setLastTimeZbarList(resultBean);
 
-                    boolean isSame = isTwoArrayListSame(lastResultBeanList ,thisTimeList);
+                    boolean isSame = isTwoArrayListSame(lastResultBean ,resultBean);
 
                     if(isSame){
                         //NOTHING draw same pic
@@ -421,7 +503,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
                             Bitmap bitmap = list.get(i).getTextBitmap();
 
                             setBarCodeDataInMemory(scanStr,bound1,bound2,bound3,bound4,zbarImageH
-                                    ,zbarImageW,bitmap,thisTimeList,cloneZBarcodeBeanArrayList);
+                                    ,zbarImageW,bitmap,resultBean,cloneZBarcodeBeanArrayList);
                         }
 
                     }else{
@@ -444,7 +526,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
                             Bitmap textZBitmap = ImageUtil.drawText(scanStr , 300 , 50 , Color.TRANSPARENT);
                             //save data in memory
                             setBarCodeDataInMemory(scanStr,bound1,bound2,bound3,bound4,zbarImageH
-                                    ,zbarImageW,textZBitmap,thisTimeList,cloneZBarcodeBeanArrayList);
+                                    ,zbarImageW,textZBitmap,resultBean,cloneZBarcodeBeanArrayList);
                         }
                     }
 
@@ -512,18 +594,18 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 
 
     //containsAll is more faster
-    private Boolean isTwoArrayListSame(ArrayList<String> selectPinkLastTimeList , ArrayList<String> selectPinkNowList){
+    private Boolean isTwoArrayListSame(ArrayList<String> lastData , ArrayList<String> data){
         boolean isSame = false;
 
-        if(selectPinkLastTimeList==null){
+        if(lastData==null){
             isSame = false;
         }else{
 
-            if(selectPinkLastTimeList.size()==selectPinkNowList.size()){
+            if(lastData.size()==data.size()){
                 isSame = true;
             }else{
-                Collection<String> before = new ArrayList(selectPinkLastTimeList);
-                Collection<String> after = new ArrayList(selectPinkNowList);
+                Collection<String> before = new ArrayList(lastData);
+                Collection<String> after = new ArrayList(data);
 
                 List<String> beforeList = new ArrayList<String>(before);
                 List<String> afterList = new ArrayList<String>(after);
@@ -600,8 +682,6 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         //stop codec
         if (myVideoEncoderStream1 != null)
             myVideoEncoderStream1.stopCodec();
-        if (myVideoEncoderStream2 != null)
-            myVideoEncoderStream2.stopCodec();
         if (myAudioEncoder != null)
             myAudioEncoder.stopCodec();
 
@@ -611,163 +691,226 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 
 
 
-    protected Matrix mViewMatrix;
+    protected Matrix matrix;
     protected Matrix decodeMatrix;
     private void configureTransform(TextureView textureView, int viewWidth, int viewHeight) {
         if (previewRawTexture == null)
             return;
 
-        CameraManager cameraManager = (CameraManager) getSystemService(CAMERA_SERVICE);
-        try {
-            //Log.i(TAG, "onSurfaceTextureAvailable:  width = " + width + ", height = " + height);
-            //String[] CameraIdList = cameraManager.getCameraIdList();
-            //獲取可用相機設備列表
-            String[] cameraIdList = cameraManager.getCameraIdList();
-            cameraId = cameraIdList[0];
-            CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraId);
+        CameraManager cameraManager = getCameraManager();
 
-            StreamConfigurationMap map = characteristics.get(
-                    CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+        cameraId = getCameraId(cameraManager);
 
-            // For still image captures, we always use the largest available size.
-            //Size largestJpeg = Collections.max(Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)), new CompareSizesByArea());
-            Size largestJpeg = ImageUtil.getBestAspectPictureSize(this, map.getOutputSizes(ImageFormat.JPEG));
-            // Find the rotation of the device relative to the native device orientation.
-            int deviceRotation = getWindowManager().getDefaultDisplay().getRotation();
-            Point displaySize = new Point();
-            getWindowManager().getDefaultDisplay().getSize(displaySize);
+        CameraCharacteristics characteristics = getCharacteristics(cameraManager);
 
-            // Find the rotation of the device relative to the camera sensor's orientation.
-            int totalRotation = sensorToDeviceRotation(characteristics, deviceRotation);
-            MyGlRenderFilter.setDeviceRotation(totalRotation);
+        StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
 
-            // Swap the view dimensions for calculation as needed if they are rotated relative to
-            // the sensor.
-            boolean swappedDimensions = totalRotation == 90 || totalRotation == 270;
-            int rotatedViewWidth = viewWidth;
-            int rotatedViewHeight = viewHeight;
-            int maxPreviewWidth = displaySize.x;
-            int maxPreviewHeight = displaySize.y;
+        // For still image captures, we always use the largest available size.
+        //Size largestJpeg = Collections.max(Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)), new CompareSizesByArea());
+        Size largestJpeg = ImageUtil.getBestAspectPictureSize(this, map.getOutputSizes(ImageFormat.JPEG));
+        // Find the rotation of the device relative to the native device orientation.
+        int deviceRotation = getWindowManager().getDefaultDisplay().getRotation();
+        Point displaySize = new Point();
+        getWindowManager().getDefaultDisplay().getSize(displaySize);
 
-            if (swappedDimensions) {
-                rotatedViewWidth = viewHeight;
-                rotatedViewHeight = viewWidth;
-                maxPreviewWidth = displaySize.y;
-                maxPreviewHeight = displaySize.x;
-            }
+        // Find the rotation of the device relative to the camera sensor's orientation.
+        int totalRotation = sensorToDeviceRotation(characteristics, deviceRotation);
+        MyGlRenderFilter.setDeviceRotation(totalRotation);
 
-            // Preview should not be larger than display size and 1080p.
-            if (maxPreviewWidth > MAX_PREVIEW_WIDTH) {
-                maxPreviewWidth = MAX_PREVIEW_WIDTH;
-            }
+        // Swap the view dimensions for calculation as needed if they are rotated relative to
+        // the sensor.
+        boolean swappedDimensions = totalRotation == 90 || totalRotation == 270;
+        int rotatedViewWidth = viewWidth;
+        int rotatedViewHeight = viewHeight;
+        int maxPreviewWidth = displaySize.x;
+        int maxPreviewHeight = displaySize.y;
 
-            if (maxPreviewHeight > MAX_PREVIEW_HEIGHT) {
-                maxPreviewHeight = MAX_PREVIEW_HEIGHT;
-            }
-
-            // Find the best preview size for these view dimensions and configured JPEG size.
-            previewSize = chooseOptimalSize(map.getOutputSizes(SurfaceTexture.class),
-                    rotatedViewWidth, rotatedViewHeight, maxPreviewWidth, maxPreviewHeight,
-                    largestJpeg);
-
-            if (swappedDimensions) {
-                if (textureView instanceof IAutoFixView) {
-                    ((IAutoFixView) textureView).setAspectRatio(
-                            previewSize.getHeight(), previewSize.getWidth());
-                }
-            } else {
-                if (textureView instanceof IAutoFixView) {
-                    ((IAutoFixView) textureView).setAspectRatio(
-                            previewSize.getWidth(), previewSize.getHeight());
-                }
-            }
-
-            if (swappedDimensions) {
-                Size rotatedSize = new Size(previewSize.getHeight(), previewSize.getWidth());
-                MyGlRenderFilter.setPreviewSize(rotatedSize);
-            } else {
-                Size rotatedSize = new Size(previewSize.getWidth(), previewSize.getHeight());
-                MyGlRenderFilter.setPreviewSize(rotatedSize);
-            }
-
-            int rotation = (characteristics.get(CameraCharacteristics.LENS_FACING) ==
-                    CameraCharacteristics.LENS_FACING_FRONT) ?
-                    (360 + ORIENTATIONS.get(deviceRotation)) % 360 :
-                    (360 - ORIENTATIONS.get(deviceRotation)) % 360;
-
-            Matrix matrix = new Matrix();
-            RectF viewRect = new RectF(0, 0, viewWidth, viewHeight);
-            RectF bufferRect = new RectF(0, 0, previewSize.getHeight(), previewSize.getWidth());
-            float centerX = viewRect.centerX();
-            float centerY = viewRect.centerY();
-
-            if (Surface.ROTATION_90 == deviceRotation || Surface.ROTATION_270 == deviceRotation) {
-                bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY());
-                matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL);
-                float scale = Math.max(
-                        (float) viewHeight / previewSize.getHeight(),
-                        (float) viewWidth / previewSize.getWidth());
-                matrix.postScale(scale, scale, centerX, centerY);
-
-            }
-            matrix.postRotate(rotation, centerX, centerY);
-            textureView.setTransform(matrix);
-
-
-            //for 調整 人臉辨識後的座標
-            mViewMatrix = new Matrix();
-            Rect mActiveArray = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
-            Size pixelSize = characteristics.get(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE);
-            float ratio = Math.max(((float) rotatedViewWidth) / mActiveArray.width(), ((float) rotatedViewHeight) / mActiveArray.height());
-            float offsetX = (mActiveArray.width() - (rotatedViewWidth / ratio)) / 2;
-            float offsetY = (mActiveArray.height() - (rotatedViewHeight / ratio)) / 2;
-            mViewMatrix.postTranslate(-offsetX, -offsetY);
-            mViewMatrix.postScale(ratio, ratio);
-            mViewMatrix.postRotate(totalRotation);
-            if (totalRotation == 90) { //翻到第2象限
-                mViewMatrix.postTranslate(rotatedViewHeight, 0);
-                //mViewMatrix.postScale(1, 1);
-            } else if (totalRotation == 270) {//翻到第4象限
-                mViewMatrix.postTranslate(0, rotatedViewWidth);
-                //mViewMatrix.postScale(1, 1);
-            } else if (totalRotation == 180) {//翻到第3象限
-                mViewMatrix.postTranslate(rotatedViewHeight, rotatedViewWidth);
-                //mViewMatrix.postScale(1, 1);
-            }
-
-
-            //test for hardware decode streaming canvas
-            decodeMatrix = new Matrix();
-            float rotatedViewWidths = stream1Size.getWidth();
-            float rotatedViewHeights = stream1Size.getHeight();
-            float arrayW = mActiveArray.width();
-            float arrayH = mActiveArray.height();
-
-            float ratio2 = Math.max(((float) rotatedViewWidths) / arrayW, ((float) rotatedViewHeights) / arrayH);
-            float offsetX2 = (arrayW - (rotatedViewWidths / ratio2)) / 2;
-            float offsetY2 = (arrayH - (rotatedViewHeights / ratio2)) / 2;
-            decodeMatrix.postTranslate(-offsetX2, -offsetY2);
-            decodeMatrix.postScale(ratio2, ratio2);
-            decodeMatrix.postRotate(totalRotation);
-            if (totalRotation == 90) { //翻到第2象限
-                decodeMatrix.postTranslate(rotatedViewHeights, 0);//y,x
-                //mViewMatrix.postScale(1, 1);
-            } else if (totalRotation == 270) {//翻到第4象限
-                decodeMatrix.postTranslate(0, rotatedViewWidths);
-                //mViewMatrix.postScale(1, 1);
-            } else if (totalRotation == 180) {//翻到第3象限
-                decodeMatrix.postTranslate(rotatedViewHeights, rotatedViewWidths);
-                //mViewMatrix.postScale(1, 1);
-            }
-//            Log.d(TAG,"AAA_totalRotation : "+totalRotation);
-
-        } catch (Exception ex) {
-            ex.printStackTrace();
+        if (swappedDimensions) {
+            rotatedViewWidth = viewHeight;
+            rotatedViewHeight = viewWidth;
+            maxPreviewWidth = displaySize.y;
+            maxPreviewHeight = displaySize.x;
         }
+
+        // Preview should not be larger than display size and 1080p.
+        if (maxPreviewWidth > MAX_PREVIEW_WIDTH) {
+            maxPreviewWidth = MAX_PREVIEW_WIDTH;
+        }
+
+        if (maxPreviewHeight > MAX_PREVIEW_HEIGHT) {
+            maxPreviewHeight = MAX_PREVIEW_HEIGHT;
+        }
+
+        // Find the best preview size for these view dimensions and configured JPEG size.
+        previewSize = chooseOptimalSize(
+                map.getOutputSizes(SurfaceTexture.class),
+                rotatedViewWidth,
+                rotatedViewHeight,
+                maxPreviewWidth,
+                maxPreviewHeight,
+                largestJpeg);
+
+        if (swappedDimensions) {
+
+            if ( textureView instanceof IAutoFixView ) {
+
+                ((IAutoFixView) textureView).setAspectRatio(
+                        previewSize.getHeight(),
+                        previewSize.getWidth());
+            }
+        } else {
+
+            if ( textureView instanceof IAutoFixView ) {
+
+                ((IAutoFixView) textureView).setAspectRatio(
+                        previewSize.getWidth(),
+                        previewSize.getHeight());
+            }
+        }
+
+        if (swappedDimensions) {
+
+            Size rotatedSize = new Size(previewSize.getHeight(), previewSize.getWidth());
+            MyGlRenderFilter.setPreviewSize(rotatedSize);
+
+        } else {
+
+            Size rotatedSize = new Size(previewSize.getWidth(), previewSize.getHeight());
+            MyGlRenderFilter.setPreviewSize(rotatedSize);
+
+        }
+
+        int rotation = (characteristics.get(CameraCharacteristics.LENS_FACING) ==
+                CameraCharacteristics.LENS_FACING_FRONT) ?
+                (360 + ORIENTATIONS.get(deviceRotation)) % 360 :
+                (360 - ORIENTATIONS.get(deviceRotation)) % 360;
+
+        Matrix matrix = new Matrix();
+        RectF viewRect = new RectF(0, 0, viewWidth, viewHeight);
+        RectF bufferRect = new RectF(0, 0, previewSize.getHeight(), previewSize.getWidth());
+        float centerX = viewRect.centerX();
+        float centerY = viewRect.centerY();
+
+        if (Surface.ROTATION_90 == deviceRotation || Surface.ROTATION_270 == deviceRotation) {
+
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY());
+            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL);
+            float scale = Math.max(
+                    (float) viewHeight / previewSize.getHeight(),
+                    (float) viewWidth / previewSize.getWidth());
+
+            matrix.postScale(scale, scale, centerX, centerY);
+
+        }
+
+        matrix.postRotate(rotation, centerX, centerY);
+        textureView.setTransform(matrix);
+
+
+        //for 調整 人臉辨識後的座標
+        this.matrix = new Matrix();
+        Rect mActiveArray = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+        Size pixelSize = characteristics.get(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE);
+        float ratio = Math.max(((float) rotatedViewWidth) / mActiveArray.width(),((float) rotatedViewHeight) / mActiveArray.height());
+        float offsetX = (mActiveArray.width() - (rotatedViewWidth / ratio)) / 2;
+        float offsetY = (mActiveArray.height() - (rotatedViewHeight / ratio)) / 2;
+        this.matrix.postTranslate(-offsetX, -offsetY);
+        this.matrix.postScale(ratio, ratio);
+        this.matrix.postRotate(totalRotation);
+
+        if (totalRotation == 90) {
+
+            this.matrix.postTranslate(rotatedViewHeight, 0);
+
+
+        } else if (totalRotation == 270) {
+
+            this.matrix.postTranslate(0, rotatedViewWidth);
+
+
+        } else if (totalRotation == 180) {
+
+            this.matrix.postTranslate(rotatedViewHeight, rotatedViewWidth);
+
+        }
+
+
+        //test for hardware decode streaming canvas
+        decodeMatrix = new Matrix();
+        float rotatedViewWidths = imageReaderSize.getWidth();
+        float rotatedViewHeights = imageReaderSize.getHeight();
+        float arrayW = mActiveArray.width();
+        float arrayH = mActiveArray.height();
+
+        float ratio2 = Math.max(((float) rotatedViewWidths) / arrayW, ((float) rotatedViewHeights) / arrayH);
+        float offsetX2 = (arrayW - (rotatedViewWidths / ratio2)) / 2;
+        float offsetY2 = (arrayH - (rotatedViewHeights / ratio2)) / 2;
+
+        decodeMatrix.postTranslate(-offsetX2, -offsetY2);
+        decodeMatrix.postScale(ratio2, ratio2);
+        decodeMatrix.postRotate(totalRotation);
+
+        if (totalRotation == 90) {
+
+            decodeMatrix.postTranslate(rotatedViewHeights, 0);//y,x
+
+        } else if (totalRotation == 270) {
+
+            decodeMatrix.postTranslate(0, rotatedViewWidths);
+
+        } else if (totalRotation == 180) {
+
+            decodeMatrix.postTranslate(rotatedViewHeights, rotatedViewWidths);
+
+        }
+
 
 
     }
 
+
+    private void initVideoEncoder(long startRecordWhenNs){
+        int stream1BitRate = 5 * 1000 * 1000;
+
+        myVideoEncoderStream1 = new MyVideoEncoder(startRecordWhenNs);
+
+        try {
+            myVideoEncoderStream1.prepareVideoEncoder(
+                    streamOffScreenSize.getWidth(),
+                    streamOffScreenSize.getHeight(),
+                    stream1BitRate,
+                    Constant.ENCODE_VIDEO_SAVE_PATH,
+                    true);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        myVideoEncoderStream1.setMyEncoderCallBackFunction(myEncoderCallBackFunction);
+    }
+
+
+    private void initAudioEncoder(long startRecordWhenNs) {
+
+        try {
+
+            audioRecord = setupAudioRecord();
+
+            startAudioRecord(audioRecord);//開始錄音
+
+            myAudioEncoder = new MyAudioEncoder(startRecordWhenNs);
+
+            myAudioEncoder.prepareAudioEncoder(audioRecord, AUDIO_SAMPLES_PER_FRAME);
+
+            myAudioEncoder.startCodec();
+
+            myAudioEncoder.setMyEncoderCallBackFunction(myEncoderCallBackFunction);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+    }
 
     // Audio
     private static final int AUDIO_SAMPLE_RATE = 44100;
@@ -813,16 +956,15 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
             return;
         }
 
-        if (useCamera2 && mCameraDelegate != null) {
+        if (isUseCamera2 && cameraAction != null) {
 
-            CameraManager cameraManager = (CameraManager) getSystemService(CAMERA_SERVICE);
-            String[] cameraIdList = new String[0];
+            CameraManager cameraManager = getCameraManager();
 
-            try {
-                cameraIdList = cameraManager.getCameraIdList();
+            cameraId = getCameraId(cameraManager);
 
-                cameraId = cameraIdList[0];
-                CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraId);
+            //獲取可用相機設備列表
+            CameraCharacteristics characteristics = getCharacteristics(cameraManager);
+
                 int deviceRotation = getWindowManager().getDefaultDisplay().getRotation();
                 Point displaySize = new Point();
                 getWindowManager().getDefaultDisplay().getSize(displaySize);
@@ -832,7 +974,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 
 
                 int screenRotation = ScreenUtil.getScreenRotation(this);
-                //mPreview.start(mCamera2Source, mGraphicOverlay);
+                //mPreview.start(camera2Source, mGraphicOverlay);
                 StartCameraSourceBean startCameraSourceBean = new StartCameraSourceBean();
                 StartCameraSourceBean.Camera2SourceBean camera2SourceBean = new StartCameraSourceBean.Camera2SourceBean();
                 camera2SourceBean.set_offScreenSurfaceTexture(offScreenSurfaceTexture);
@@ -840,23 +982,23 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
                 camera2SourceBean.setPreviewSurfaceTexture(previewSurfaceTexture);
                 camera2SourceBean.setTextureView(txv_cameraPreviewWithFilter);
                 if(swappedDimensions){
-                    camera2SourceBean.setStreamingResolutionH(stream1Size.getWidth());
-                    camera2SourceBean.setStreamingResolutionW(stream1Size.getHeight());
+                    camera2SourceBean.setImageReaderH(imageReaderSize.getWidth());
+                    camera2SourceBean.setImageReaderW(imageReaderSize.getHeight());
+                    camera2SourceBean.setOffScreenResolutionH(streamOffScreenSize.getWidth());
+                    camera2SourceBean.setOffscreenResolutionW(streamOffScreenSize.getHeight());
                 }else{
-                    camera2SourceBean.setStreamingResolutionH(stream1Size.getHeight());
-                    camera2SourceBean.setStreamingResolutionW(stream1Size.getWidth());
+                    camera2SourceBean.setImageReaderH(imageReaderSize.getHeight());
+                    camera2SourceBean.setImageReaderW(imageReaderSize.getWidth());
+                    camera2SourceBean.setOffScreenResolutionH(streamOffScreenSize.getHeight());
+                    camera2SourceBean.setOffscreenResolutionW(streamOffScreenSize.getWidth());
                 }
                 startCameraSourceBean.setCamera2SourceBean(camera2SourceBean);
                 startCameraSourceBean.setCamera1SourceBean(null);
 
-                mCameraDelegate.startCameraSource(startCameraSourceBean);
+                cameraAction.startCameraSource(startCameraSourceBean);
 
                 //myVideoEncoderStream1.setEncoderCanvasInfo(previewEglCtx,previewRawTexture,previewSurfaceTexture);
                 myVideoEncoderStream1.startCodec();
-
-            } catch (CameraAccessException e) {
-                e.printStackTrace();
-            }
 
 
         }else{
@@ -866,8 +1008,8 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
     }
 
     private void stopCameraSource() {
-        if (mCameraDelegate != null) {
-            mCameraDelegate.stopCameraSource();
+        if (cameraAction != null) {
+            cameraAction.stopCameraSource();
         }
     }
 
@@ -1002,11 +1144,11 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 
 
     private void initZbarScanner(){
-        mZabrHandler = new Handler(Looper.getMainLooper()) {
+        zbarHandler = new Handler(Looper.getMainLooper()) {
             @Override
             public void handleMessage(Message msg) {
-                if (mZbarCallback != null){
-                    mZbarCallback.onScanResult((String) msg.obj);
+                if (zbarCallback != null){
+                    zbarCallback.onScanResult((String) msg.obj);
                 }
             }
         };
@@ -1016,7 +1158,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 
 
     private void setZabrScanCallback(ScanCallback callback) {
-        this.mZbarCallback = callback;
+        this.zbarCallback = callback;
     }
 
     //abstract factory
@@ -1045,21 +1187,21 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 //                    .setRequestedFps(30.0f)
 //                    .setYuvCallBack().build();
 //
-//            mCameraDelegate = mCameraSource;
+//            cameraAction = mCameraSource;
 //            return factory;
 //        }
 
         @Override
         public Camera2Factory buildCamera2() {
             Camera2Factory  factory = new Camera2Factory();
-            mCamera2Source =  new Camera2Source.Builder(SurfaceTextureCamera2Activity.this)
-                    .setFocusMode(Camera2Source.CAMERA_AF_AUTO)
+            camera2Source =  new Camera2Source.Builder(SurfaceTextureCamera2Activity.this)
+                    .setFocusMode(Camera2Source.CAMERA_AF_CONTINUOUS_VIDEO)
                     .setFlashMode(Camera2Source.CAMERA_FLASH_AUTO)
                     .setFacing(Camera2Source.CAMERA_FACING_FRONT)
                     .setYuvCallBack().build();
 
-            if (mCamera2Source.isCamera2Native()) {
-                mCameraDelegate = mCamera2Source;
+            if (camera2Source.isCamera2Native()) {
+                cameraAction = camera2Source;
 
             }
             return factory;
@@ -1078,7 +1220,7 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
 ////                    .setRequestedFps(30.0f)
 ////                    .setYuvCallBack().build();
 ////
-////            mCameraDelegate = mCameraSource;
+////            cameraAction = mCameraSource;
 //
 //            return factory;
 //        }
@@ -1086,14 +1228,14 @@ public class SurfaceTextureCamera2Activity extends AppCompatActivity implements 
         @Override
         public Camera2Factory buildCamera2() {
             Camera2Factory  factory = new Camera2Factory();
-            mCamera2Source =  new Camera2Source.Builder(SurfaceTextureCamera2Activity.this)
-                    .setFocusMode(Camera2Source.CAMERA_AF_AUTO)
+            camera2Source =  new Camera2Source.Builder(SurfaceTextureCamera2Activity.this)
+                    .setFocusMode(Camera2Source.CAMERA_AF_CONTINUOUS_VIDEO)
                     .setFlashMode(Camera2Source.CAMERA_FLASH_AUTO)
                     .setFacing(Camera2Source.CAMERA_FACING_BACK)
                     .setYuvCallBack().build();
 
-            if (mCamera2Source.isCamera2Native()) {
-                mCameraDelegate = mCamera2Source;
+            if (camera2Source.isCamera2Native()) {
+                cameraAction = camera2Source;
             }
             return factory;
 

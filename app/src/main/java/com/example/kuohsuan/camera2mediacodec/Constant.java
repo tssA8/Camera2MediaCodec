@@ -17,6 +17,8 @@ public class Constant {
     public static final int CAMERA_FACING_FRONT = 1;
     public static final int CAMERA_AF_AUTO = CaptureRequest.CONTROL_AF_MODE_AUTO;
     public static final int CAMERA_FLASH_AUTO = CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH;
+    public static final String ENCODE_VIDEO_SAVE_PATH ="camera2mediacodec0.264";
+    public static final String SDCARD_FILE_PATH_OUTPUT_DIR = "/sdcard/temp/videorecord/";
 
     //ZBAR
     public static final String ZBAR_BARCODE_BOUND1="bound1";
