@@ -18,7 +18,7 @@ put these in gradle
 //draw the view if you want
     compile 'com.github.ChillingVan:android-openGL-canvas:v1.2.2.3'
 //event bus 
-  compile 'org.greenrobot:eventbus:3.1.1'
+    compile 'org.greenrobot:eventbus:3.1.1'
   
 ````````
 
