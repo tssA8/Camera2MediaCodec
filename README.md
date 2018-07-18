@@ -63,7 +63,7 @@ if your device support 1920*1080 .  e.g STREAMING_RESOLUTION = 1920
   
 `````
 `````
-//init zbarProcessorRunnable
+* init zbarProcessorRunnable
   if(zbarProcessorRunnable == null && imageWidth >0 && imageHeight >0 ){
             zbarProcessorRunnable = new ZbarProcessorRunnable(
                     imageWidth,//image width 
@@ -73,7 +73,7 @@ if your device support 1920*1080 .  e.g STREAMING_RESOLUTION = 1920
             );
         }
         
-  //set data to zbar
+  * set data to zbar
   if(zbarProcessorRunnable!=null) {
        zbarProcessorRunnable.setNextFrame(data);
    }  
