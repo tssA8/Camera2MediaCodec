@@ -65,10 +65,10 @@ initViewEncoder(STREAMING_RESOLUTION);
   * [IYuvDataCallback.java](app/src/main/java/com/example/kuohsuan/camera2mediacodec/Interface/IYuvDataCallback.java)
   
   *Add ZbarProcessorRunnable Code
-  *[ZbarProcessorRunnable.java](Camera2MediaCodec/app/src/main/java/com/example/kuohsuan/camera2mediacodec/ZbarProcessorRunnable.java)
+  * [ZbarProcessorRunnable.java](Camera2MediaCodec/app/src/main/java/com/example/kuohsuan/camera2mediacodec/ZbarProcessorRunnable.java)
   
   *Add EventBus bean
-  *[ZbarResultEventBus.java](Camera2MediaCodec/app/src/main/java/com/example/kuohsuan/camera2mediacodec/myeventbus/ZbarResultEventBus.java)
+  * [ZbarResultEventBus.java](Camera2MediaCodec/app/src/main/java/com/example/kuohsuan/camera2mediacodec/myeventbus/ZbarResultEventBus.java)
 `````
  1. init ZbarProcessorRunnable
  2. put the byte[] data to ZbarProcessorRunnable
