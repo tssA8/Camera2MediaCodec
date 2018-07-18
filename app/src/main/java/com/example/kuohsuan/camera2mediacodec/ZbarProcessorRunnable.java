@@ -14,10 +14,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.nio.ByteBuffer;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * Created by kuohsuan on 2018/4/23.
@@ -38,19 +35,11 @@ public class ZbarProcessorRunnable implements Runnable {
     private byte[] mPendingFrameData;
     private Thread mProcessingThread;
     private ImageScanner zbarImageScanner;
-    private int fourKImageHeight = 1080;
-    private int fourKImageWidth = 1920;
+    private int imageH = 1080;
+    private int imageW = 1920;
     private int  previewW,  previewH;
-    private Handler mZabrHandler;
+    private Handler zbarHander;
     private ZbarInPutDataQueue zbarInPutDataQueue = new ZbarInPutDataQueue();
-    private ExecutorService executorService = Executors.newSingleThreadExecutor();
-    private  Runnable mAnalysisTask = new Runnable() {
-        @Override
-        public void run() {
-            Image barcode = zbarInPutDataQueue.getBeanInPutQueue();
-            startZbarScan(barcode, fourKImageWidth,fourKImageHeight);
-        }
-    };
     /**
      * Map to convert between a byte array, received from the camera, and its associated byte
      * buffer.  We use byte buffers internally because this is a more efficient way to call into
@@ -61,13 +50,13 @@ public class ZbarProcessorRunnable implements Runnable {
 
     public ZbarProcessorRunnable(Handler mZabrHandler
             , int width, int height, int  previewW, int  previewH, Image barcode) {
-        this.mZabrHandler = mZabrHandler;
+        this.zbarHander = mZabrHandler;
         zbarImageScanner = new ImageScanner();
         zbarImageScanner.setConfig(0, Config.X_DENSITY, 3);
         zbarImageScanner.setConfig(0, Config.Y_DENSITY, 3);
         mProcessingThread = new Thread(this);
-        fourKImageWidth = width;
-        fourKImageHeight = height;
+        imageW = width;
+        imageH = height;
         this.previewH = previewH;
         this.previewW = previewW;
         this.barcode = barcode;
@@ -114,14 +103,21 @@ public class ZbarProcessorRunnable implements Runnable {
                 }
                 barcode.setData(mPendingFrameData);
                 zbarInPutDataQueue.addQueue(barcode);
-                executorService.execute(mAnalysisTask);
                 mPendingFrameData = null;
             }
+
+            Image barcode = zbarInPutDataQueue.getBeanInPutQueue();
+            if(barcode!=null) {
+                try {
+                    startZbarScan(barcode, imageW, imageH);
+                    Thread.sleep(3);
+                }catch (Exception e){
+                    e.printStackTrace();
+                }
+            }
+
         }
     }
-
-
-
 
 
     public void start() {
@@ -163,21 +159,6 @@ public class ZbarProcessorRunnable implements Runnable {
     }
 
 
-    byte[] data=null;
-    private byte[] convertYUV420888ToNV21Grey(android.media.Image imgYUV420) {
-        // Converting YUV_420_888 data to NV21.
-        ByteBuffer buffer0 = imgYUV420.getPlanes()[0].getBuffer();
-        int buffer0_size = (imgYUV420.getHeight())*(imgYUV420.getWidth());
-//        Log.d(TAG," buffer0 SIZE : "+buffer0_size);
-
-        if(data==null)
-            data = new byte[buffer0_size ];
-
-        buffer0.get(data, 0, buffer0_size);
-
-        return data;
-    }
-
     private void startZbarScan(Image barcode,int imageWidth, int imageHeight){
 //            Log.d(TAG,"B_________result");
         //            Log.d(TAG,"B_________result");
@@ -196,7 +177,7 @@ public class ZbarProcessorRunnable implements Runnable {
                 try {
 
                     /**
-                     * 轉換座標, 4k to previewSize
+                     * 轉換座標, 1920*1080 to previewSize
                      * */
                     int  previewW = this.previewW;
                     int  previewH = this.previewH;
@@ -253,7 +234,7 @@ public class ZbarProcessorRunnable implements Runnable {
 //                }
         }
 
-        Message message = mZabrHandler.obtainMessage();
+        Message message = zbarHander.obtainMessage();
         //                Bundle bundle = new Bundle();
         //                message.obj = resultStr;
         message.obj = jsonArrayObject.toString();

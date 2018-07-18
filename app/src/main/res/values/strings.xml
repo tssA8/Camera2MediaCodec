@@ -7,4 +7,8 @@
     <string name="permission_request">This sample needs permission for camera and audio recording.</string>
     <string name="camera_error">This device doesn\'t support Camera2 API.</string>
     <string name="request_permission">This sample needs camera permission.</string>
+
+    <string name="action_settings">Settings</string>
+
+    <string name="message_permission_always_failed">Please check your setting and allow the permission to MobileCam</string>
 </resources>
