@@ -5,15 +5,24 @@
 1.use async mediaCodec
 2.use camera2
 3.use zbar to scan barcode
-4.use opengl to draw zbar result (from android-openGL-canvas)
-5.transform zbar result x ais and y ais to preview x ais and y ais location.(eg 3840*2160 to 1280*768 draw opengl )
 ```
-
 usage
 -------
+
+*gradle
+````````
+//zbar
+    compile 'com.yanzhenjie.zbar:zbar:1.0.0'
+    compile 'com.yanzhenjie.zbar:camera:1.0.0'
+    compile 'com.yanzhenjie:permission:1.0.7'
+//draw the view if you want
+    compile 'com.github.ChillingVan:android-openGL-canvas:v1.2.2.3'
+//event bus 
+  compile 'org.greenrobot:eventbus:3.1.1'
+````````
 *camera2
 `````
-first: easy to use camera 
+first: init camera2
    
     if(usingFrontCamera){
             FrontCamera frontCamera = new FrontCamera();
@@ -26,36 +35,14 @@ first: easy to use camera
         
 second: startCamera when surfaceTexture is available or onSet
   
-   offScreenCanvasWithFilter.setOnSurfaceTextureSet(new GLSurfaceTextureProducerView.OnSurfaceTextureSet() {
-                    @Override
-                    public void onSet(SurfaceTexture surfaceTexture, RawTexture surfaceTextureRelatedTexture) {
-                        Log.d(TAG, "aaa_offScreenCanvas_onSet");
-                        offScreenSurfaceTexture = surfaceTexture;
-                        offScreenRawTexture = surfaceTextureRelatedTexture;
-                        surfaceTexture.setOnFrameAvailableListener(new SurfaceTexture.OnFrameAvailableListener() {
-                            @Override
-                            public void onFrameAvailable(SurfaceTexture surfaceTexture) {
-                                offScreenCanvasWithFilter.requestRenderAndWait();
-                            }
-                        });
-           
-                        startCameraSource();//this
-                       
-
-                    }
-                });
-
-
 ``````
 
 
 
 *zbar detect resolution set
-`````
+````
 can set resoluition to zbar library
-
 if your device support 1920*1080 .  e.g STREAMING_RESOLUTION = 1920
-initViewEncoder(STREAMING_RESOLUTION);
 
 `````
 
