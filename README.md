@@ -61,7 +61,7 @@ if your device support 1920*1080 .  e.g STREAMING_RESOLUTION = 1920
  
  `````
  1. init ZbarProcessorRunnable
- 2. put the byte[] data to ZbarProcessorRunnable
+ 2. put the byte[] data into ZbarProcessorRunnable
  3. register EventBus for zbar result 
   
 `````
