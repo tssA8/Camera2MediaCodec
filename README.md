@@ -69,6 +69,15 @@ initViewEncoder(STREAMING_RESOLUTION);
   
   *Add EventBus bean
   * [ZbarResultEventBus.java](Camera2MediaCodec/app/src/main/java/com/example/kuohsuan/camera2mediacodec/myeventbus/ZbarResultEventBus.java)
+  
+  if(zbarProcessorRunnable == null && imageWidth >0 && imageHeight >0 ){
+            zbarProcessorRunnable = new ZbarProcessorRunnable(
+                    imageWidth,//image width 
+                    imageHeight,
+                    previewSize.getWidth(),//camera2 preview width 
+                    previewSize.getHeight()
+            );
+        }
 `````
  1. init ZbarProcessorRunnable
  2. put the byte[] data to ZbarProcessorRunnable
