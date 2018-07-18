@@ -63,23 +63,16 @@ initViewEncoder(STREAMING_RESOLUTION);
 *zbar
   *Add interface callback code
   * [IYuvDataCallback.java](app/src/main/java/com/example/kuohsuan/camera2mediacodec/Interface/IYuvDataCallback.java)
+  
+  *Add ZbarProcessorRunnable Code
+  *[ZbarProcessorRunnable.java](Camera2MediaCodec/app/src/main/java/com/example/kuohsuan/camera2mediacodec/ZbarProcessorRunnable.java)
+  
+  *Add EventBus bean
+  *[ZbarResultEventBus.java](Camera2MediaCodec/app/src/main/java/com/example/kuohsuan/camera2mediacodec/myeventbus/ZbarResultEventBus.java)
 `````
- 1.set IYuvDataCallback in your ImageReader callback
-  e.g
-   if(mIYuvDataCallback !=null){
-                mIYuvDataCallback.getYuv(convertYUV420888ToNV21Grey(mImage),mImage.getWidth(),mImage.getHeight());
-            }
-           
-  2. init zbar scanner
-  
-  3. implements IYuvDataCallback in your class,then you can get the data from ImageReader callback
-  
-  4. use zbar to scan
-     e.g
-      Image barcode = new com.yanzhenjie.zbar.Image(imageWidth, imageHeight, "Y800");
-      barcode.setData(data);
-      int result = zbarImageScanner.scanImage(barcode);
-      SymbolSet symSet = zbarImageScanner.getResults();
+ 1. init ZbarProcessorRunnable
+ 2. put the byte[] data to ZbarProcessorRunnable
+ 3. register EventBus for zbar result 
   
 `````
 
