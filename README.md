@@ -6,9 +6,9 @@
 2.use camera2
 3.use zbar to scan barcode
 ```
-usage
+##usage
 -------
-*gradle
+### Gradle dependency
 ````````
 put these in gradle
 
@@ -84,7 +84,7 @@ if your device support 1920*1080 .  e.g STREAMING_RESOLUTION = 1920
 `````
 
 
-preview 
+##preview 
 -----
 ￼￼￼![alt text](https://serving.photos.photobox.com/314167626a7d55376ab63d583d9df972d8aa18ff8601dd85abc2f4b2b5e02e352335433c.jpg)
 * draw the canvas on preview 
