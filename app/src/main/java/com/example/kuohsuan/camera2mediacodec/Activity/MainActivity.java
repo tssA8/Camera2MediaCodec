@@ -4,23 +4,23 @@ import android.Manifest;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 
-import com.example.kuohsuan.camera2mediacodec.R;
-import com.tbruyelle.rxpermissions2.Permission;
-import com.tbruyelle.rxpermissions2.RxPermissions;
 
-import io.reactivex.functions.Consumer;
+import com.example.kuohsuan.camera2mediacodec.R;
 
 public class MainActivity extends AppCompatActivity {
-    private RxPermissions rxPermissions;
     private AlertDialog intentSettingAlertDialog;
+    private static final int PERMISSION_REQUEST_CODE = 100;
     private String TAG = this.getClass().getSimpleName();
 
     @Override
@@ -30,55 +30,76 @@ public class MainActivity extends AppCompatActivity {
         addPermission();
     }
 
-    private void addPermission(){
+    private void addPermission() {
+        if (hasPermissions()) {
+            setPermissionHasBeenAskedOrNot(true);
+            proceedToNextActivity();
+        } else {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{
+                            Manifest.permission.CAMERA,
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                            Manifest.permission.READ_EXTERNAL_STORAGE,
+                            Manifest.permission.RECORD_AUDIO
+                    },
+                    PERMISSION_REQUEST_CODE);
+        }
+    }
 
-        rxPermissions = new RxPermissions(this);
-        rxPermissions.requestEachCombined(
-                Manifest.permission.CAMERA
-                ,Manifest.permission.WRITE_EXTERNAL_STORAGE
-                ,Manifest.permission.READ_EXTERNAL_STORAGE
-                ,Manifest.permission.RECORD_AUDIO)
-                .subscribe(new Consumer<Permission>() {
-                    @Override
-                    public void accept(Permission permission) {
+    private boolean hasPermissions() {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+    }
 
-                        if(permission.granted){
-                            setPermissionHasBeenAskedOrNot(true);
-                        }else if(permission.shouldShowRequestPermissionRationale){
-                            // Denied permission without ask never again
-                            setPermissionHasBeenAskedOrNot(false);
-                            Log.d(TAG, "aaa_shouldShowRequestPermissionRationale result " + permission);
-                        }else{
-                            // Denied permission with ask never again
-                            setPermissionHasBeenAskedOrNot(false);
-                            Log.d(TAG, "aaa_Denied result " + permission);
-                        }
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            boolean allGranted = true;
+            boolean showRationale = false;
 
+            for (int i = 0; i < grantResults.length; i++) {
+                if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false;
+                    if (!ActivityCompat.shouldShowRequestPermissionRationale(this, permissions[i])) {
+                        showRationale = true;
                     }
-                });
+                }
+            }
 
+            if (allGranted) {
+                setPermissionHasBeenAskedOrNot(true);
+                proceedToNextActivity();
+            } else if (showRationale) {
+                // 權限被拒絕且不再詢問
+                setPermissionHasBeenAskedOrNot(false);
+                showSettingDialog(this);
+            } else {
+                // 權限被拒絕但可以再次請求
+                setPermissionHasBeenAskedOrNot(false);
+                Log.d(TAG, "Permission denied without 'Don't ask again'");
+            }
+        }
+    }
 
-
-
+    private void proceedToNextActivity() {
+        startActivity(new Intent(this, SurfaceTextureCamera2Activity.class));
+        finish();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-//        Log.d(TAG,"onResume");
-
-        if(isPermissionHasBeenAsked()==true){
-            Log.d(TAG,"AAA_onResume isPermissionHasBeenAsked ");
-            startActivity(new Intent(this, SurfaceTextureCamera2Activity.class));
-            finish();
-        }else{
-            // Need to go to the settings
+        if (isPermissionHasBeenAsked()) {
+            proceedToNextActivity();
+        } else {
             showSettingDialog(this);
         }
     }
 
     public void showSettingDialog(Context context) {
-
         String message = context.getString(R.string.message_permission_always_failed);
         intentSettingAlertDialog = new AlertDialog.Builder(context)
                 .setCancelable(false)
@@ -94,17 +115,15 @@ public class MainActivity extends AppCompatActivity {
                         startActivity(intent);
                     }
                 }).show();
-
     }
-
 
     private static boolean isAsked = false;
-    private static void setPermissionHasBeenAskedOrNot(@NonNull boolean _isAsk){
+
+    private static void setPermissionHasBeenAskedOrNot(@NonNull boolean _isAsk) {
         isAsked = _isAsk;
     }
-    private static boolean isPermissionHasBeenAsked(){
+
+    private static boolean isPermissionHasBeenAsked() {
         return isAsked;
     }
-
-
 }
