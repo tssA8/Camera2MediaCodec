@@ -11,7 +11,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class ZbarQueue {
     //FIFO
     private ConcurrentLinkedQueue<ZBarCodeBean> queue = new ConcurrentLinkedQueue<>();
-
     private static ZbarQueue instance = null;
     private ZbarQueue(){}
     public static ZbarQueue getInstance(){
@@ -24,7 +23,6 @@ public class ZbarQueue {
         }
         return instance;
     }
-
 
     public void addQueue(ZBarCodeBean bean){
         queue.offer(bean);

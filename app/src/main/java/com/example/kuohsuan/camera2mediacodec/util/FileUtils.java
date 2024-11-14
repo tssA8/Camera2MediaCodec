@@ -10,7 +10,6 @@ import java.io.IOException;
 public class FileUtils {
 
     static final String TAG = "FileUtils";
-
     static final String OUTPUT_DIR = "HWEncodingExperiments";       // Directory relative to External or Internal (fallback) Storage
 
     /**
@@ -19,26 +18,26 @@ public class FileUtils {
      * If the directory did not exist, it will be created at the conclusion of this call.
      * If a file with conflicting name exists, this method returns null;
      *
-     * @param c the context to determine the internal storage location, if external is unavailable
+     * @param c              the context to determine the internal storage location, if external is unavailable
      * @param directory_name the name of the directory desired at the storage location
      * @return a File pointing to the storage directory, or null if a file with conflicting name
      * exists
      */
-    public static File getRootStorageDirectory(Context c, String directory_name){
+    public static File getRootStorageDirectory(Context c, String directory_name) {
         File result;
         // First, try getting access to the sdcard partition
-        if(Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)){
-            Log.d(TAG,"Using sdcard");
+        if (Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)) {
+            Log.d(TAG, "Using sdcard");
             result = new File(Environment.getExternalStorageDirectory(), directory_name);
         } else {
             // Else, use the internal storage directory for this application
-            Log.d(TAG,"Using internal storage");
+            Log.d(TAG, "Using internal storage");
             result = new File(c.getApplicationContext().getFilesDir(), directory_name);
         }
 
-        if(!result.exists())
+        if (!result.exists())
             result.mkdir();
-        else if(result.isFile()){
+        else if (result.isFile()) {
             return null;
         }
         Log.d("getRootStorageDirectory", result.getAbsolutePath());
@@ -53,17 +52,17 @@ public class FileUtils {
      * @return a File pointing to the desired directory, or null if a file with conflicting name
      * exists or if getRootStorageDirectory was not called first
      */
-    public static File getStorageDirectory(File parent_directory, String new_child_directory_name){
+    public static File getStorageDirectory(File parent_directory, String new_child_directory_name) {
 
         File result = new File(parent_directory, new_child_directory_name);
-        if(!result.exists())
-            if(result.mkdir())
+        if (!result.exists())
+            if (result.mkdir())
                 return result;
-            else{
+            else {
                 Log.e("getStorageDirectory", "Error creating " + result.getAbsolutePath());
                 return null;
             }
-        else if(result.isFile()){
+        else if (result.isFile()) {
             return null;
         }
 
@@ -74,17 +73,18 @@ public class FileUtils {
     /**
      * Returns a TempFile with given root, filename, and extension.
      * The resulting TempFile is safe for use with Android's MediaRecorder
+     *
      * @param c
      * @param root
      * @param filename
      * @param extension
      * @return
      */
-    public static File createTempFile(Context c, File root, String filename, String extension){
+    public static File createTempFile(Context c, File root, String filename, String extension) {
         File output = null;
         try {
-            if(filename != null){
-                if(!extension.contains("."))
+            if (filename != null) {
+                if (!extension.contains("."))
                     extension = "." + extension;
                 output = new File(root, filename + extension);
                 output.createNewFile();
@@ -99,11 +99,10 @@ public class FileUtils {
     }
 
 
-    public static File createTempFileInRootAppStorage(Context c, String filename){
+    public static File createTempFileInRootAppStorage(Context c, String filename) {
         File recordingDir = FileUtils.getRootStorageDirectory(c, OUTPUT_DIR);
         return createTempFile(c, recordingDir, filename.split("\\.")[0], filename.split("\\.")[1]);
     }
-
 
 
     public static String mkDirs(String path) {
@@ -115,8 +114,7 @@ public class FileUtils {
                 list.append(pathAry[i] + "/");
                 File dir = new File(list.toString());
                 // System.out.println(dir.getName());
-                if (!dir.exists())
-                {
+                if (!dir.exists()) {
                     dir.mkdir();
 
                 }
@@ -124,11 +122,11 @@ public class FileUtils {
         }
         return list.toString();
     }
+
     /**
      * 刪除資料夾裡面的所有檔
      *
-     * @param path
-     *            String資料夾路徑 如 c:/fqf
+     * @param path String資料夾路徑 如 c:/fqf
      */
     public static void delAllFile(String path) {
         File file = new File(path);
@@ -155,6 +153,7 @@ public class FileUtils {
             }
         }
     }
+
     /**
      * 刪除資料夾
      *
@@ -169,10 +168,9 @@ public class FileUtils {
             //myFilePath.delete(); // 刪除空資料夾
 
         } catch (Exception e) {
-            Log.e(TAG,"刪除資料夾操作出錯");
+            Log.e(TAG, "刪除資料夾操作出錯");
             e.printStackTrace();
 
         }
-
     }
 }
