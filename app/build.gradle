@@ -1,0 +1,50 @@
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 27
+    buildToolsVersion "27.0.3"
+
+    defaultConfig {
+        applicationId "com.example.kuohsuan.androidcamera2mediacodec"
+        minSdkVersion 21
+        targetSdkVersion 22
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters "armeabi" // 保留這三種架構的CPU
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            ndk {
+                abiFilters "armeabi" // 保留這三種架構的CPU
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    androidTestImplementation('com.android.support.test.espresso:espresso-core:2.2.2') {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    }
+
+    implementation 'com.android.support:appcompat-v7:27.1.1'
+    implementation 'com.android.support.constraint:constraint-layout:1.1.0'
+    implementation 'com.android.support:design:27.1.1'
+    implementation 'com.google.code.gson:gson:2.8.2'
+    implementation 'com.github.ChillingVan:android-openGL-canvas:v1.2.2.3'
+    implementation 'com.tbruyelle.rxpermissions2:rxpermissions:0.9.5@aar'
+    implementation 'com.jakewharton.rxbinding:rxbinding:0.4.0'
+    implementation 'io.reactivex.rxjava2:rxjava:2.1.8'
+    implementation 'org.greenrobot:eventbus:3.1.1'
+    implementation 'com.yanzhenjie.zbar:zbar:1.0.0'
+    implementation 'com.yanzhenjie.zbar:camera:1.0.0'
+    implementation 'com.yanzhenjie:permission:1.0.7'
+    implementation 'com.google.android.gms:play-services-vision:10.2.0'
+
+    testImplementation 'junit:junit:4.12'
+}
